@@ -1,0 +1,47 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Security.Cryptography;
+using System.Net;
+using System.Net.Http;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+
+namespace DeskFlow {
+ public sealed class PrivateUpdateCredentials {
+  readonly string file;static readonly byte[] Purpose=Encoding.UTF8.GetBytes("DeskFlow.PrivateUpdateCredentials.v1");
+  public PrivateUpdateCredentials(string dataRoot){Directory.CreateDirectory(dataRoot);file=Path.Combine(dataRoot,"github-update.bin");}
+  public sealed class Entry {public string Repository,Token;}
+  public void Save(string repository,string token){repository=UpdateClient.Repository(repository);token=(token??"").Trim();if(!Regex.IsMatch(token,@"\Agithub_pat_[A-Za-z0-9_]{10,4000}\z"))throw new ArgumentException("이 저장소에만 Contents 읽기 권한을 준 fine-grained 토큰을 입력해 주세요.");
+   byte[] clear=Encoding.UTF8.GetBytes(UpdateCore.Json.Serialize(new Entry{Repository=repository,Token=token}));try{byte[] encrypted=ProtectedData.Protect(clear,Purpose,DataProtectionScope.CurrentUser);string temp=file+".tmp";File.WriteAllBytes(temp,encrypted);if(File.Exists(file))File.Replace(temp,file,null);else File.Move(temp,file);}finally{Array.Clear(clear,0,clear.Length);}}
+  public string Load(string repository){if(!File.Exists(file))return "";byte[] clear=null;try{if(new FileInfo(file).Length>32768)throw new InvalidDataException();clear=ProtectedData.Unprotect(File.ReadAllBytes(file),Purpose,DataProtectionScope.CurrentUser);var entry=UpdateCore.Json.Deserialize<Entry>(Encoding.UTF8.GetString(clear));return string.Equals(entry.Repository,UpdateClient.Repository(repository),StringComparison.OrdinalIgnoreCase)?entry.Token:"";}catch{throw new IOException("저장된 GitHub 인증 정보를 읽지 못했습니다. 이 컴퓨터에서 다시 등록해 주세요.");}finally{if(clear!=null)Array.Clear(clear,0,clear.Length);}}
+  public void Clear(){if(File.Exists(file))File.Delete(file);}
+ }
+ public sealed partial class UpdateClient {
+  static bool ApiOrigin(Uri u){return u!=null&&u.Scheme=="https"&&u.Host.Equals("api.github.com",StringComparison.OrdinalIgnoreCase)&&u.Port==443&&u.UserInfo==""&&u.Fragment=="";}
+  internal static bool CredentialTarget(Uri uri,string repository){if(!ApiOrigin(uri))return false;string root="/repos/"+Repository(repository);string path=uri.AbsolutePath;if(!path.StartsWith(root,StringComparison.OrdinalIgnoreCase))return false;string suffix=path.Substring(root.Length);return suffix==""||suffix=="/contents"||suffix.StartsWith("/releases/",StringComparison.OrdinalIgnoreCase)||suffix=="/contents/updates/latest.json"||Regex.IsMatch(suffix,@"\A/git/blobs/(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})\z");}
+  HttpRequestMessage PrivateRequest(Uri url,string repository,string token,bool binary){if(!CredentialTarget(url,repository))throw new IOException("저장소 인증을 전송할 주소가 올바르지 않습니다.");if(string.IsNullOrEmpty(token)||token.Any(c=>char.IsControl(c)||char.IsWhiteSpace(c)))throw new IOException("GitHub 인증 정보가 없습니다. 프로그램 설정에 등록해 주세요.");var r=new HttpRequestMessage(HttpMethod.Get,url);r.Headers.Authorization=new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer",token);r.Headers.Accept.ParseAdd(binary?(url.AbsolutePath.Contains("/git/blobs/")?"application/vnd.github.raw+json":"application/octet-stream"):"application/vnd.github+json");return r;}
+  static void PrivateError(HttpResponseMessage response){if(response.StatusCode==HttpStatusCode.Unauthorized)throw new IOException("GitHub 토큰이 만료되었거나 유효하지 않습니다. 인증 정보를 다시 등록해 주세요.");if(response.StatusCode==HttpStatusCode.Forbidden)throw new IOException("GitHub 읽기 권한 또는 조회 한도를 확인해 주세요.");if(response.StatusCode==HttpStatusCode.NotFound)throw new IOException("저장소 또는 릴리스를 찾지 못했습니다. 토큰에서 이 비공개 저장소를 선택했는지 확인해 주세요.");if(!response.IsSuccessStatusCode)throw new IOException("GitHub 조회에 실패했습니다. 상태 코드: "+(int)response.StatusCode);}
+  async Task<Dictionary<string,object>> PrivateJson(string url,string repository,string token,bool missingAllowed=false){try{using(var req=PrivateRequest(new Uri(url),repository,token,false))using(var response=await http.SendAsync(req)){if(missingAllowed&&response.StatusCode==HttpStatusCode.NotFound)return null;PrivateError(response);return (Dictionary<string,object>)UpdateCore.Json.DeserializeObject(await response.Content.ReadAsStringAsync());}}catch(HttpRequestException){throw new IOException("GitHub 네트워크 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.");}}
+  async Task VerifyPrivateRepository(string repository,string token){var meta=await PrivateJson("https://api.github.com/repos/"+repository,repository,token);if(!meta.ContainsKey("private")||!Convert.ToBoolean(meta["private"])||!Str(meta,"full_name").Equals(repository,StringComparison.OrdinalIgnoreCase))throw new IOException("업데이트 대상은 준학님 비공개 저장소여야 합니다. 저장소 이름과 Private 설정을 확인해 주세요.");}
+  public async Task<string> CheckPrivateConnection(string repository,string token){repository=Repository(repository);await VerifyPrivateRepository(repository,token);using(var req=PrivateRequest(new Uri("https://api.github.com/repos/"+repository+"/contents"),repository,token,false))using(var response=await http.SendAsync(req)){PrivateError(response);}return "비공개 저장소의 읽기 인증을 확인했습니다. 지금 업데이트 확인을 눌러 주세요.";}
+  public async Task<UpdateRelease> CheckPrivate(string repository,Version current,string token){repository=Repository(repository);await VerifyPrivateRepository(repository,token);var manifest=await PrivateJson("https://api.github.com/repos/"+repository+"/contents/updates/latest.json",repository,token,true);if(manifest!=null){if(Str(manifest,"encoding")!="base64")throw new IOException("업데이트 목록 인코딩이 올바르지 않습니다.");string json;try{json=Encoding.UTF8.GetString(Convert.FromBase64String(Str(manifest,"content")));}catch{throw new IOException("업데이트 목록을 읽지 못했습니다.");}return ParsePrivateManifest(json,repository,current);}var raw=await PrivateJson("https://api.github.com/repos/"+repository+"/releases/latest",repository,token);var release=ParseRelease(UpdateCore.Json.Serialize(raw),repository,current);if(release==null)return null;foreach(var item in (object[])raw["assets"]){var asset=(Dictionary<string,object>)item;if(Str(asset,"name")!="DeskFlow-update.zip")continue;long id;if(!long.TryParse(Str(asset,"id"),out id)||id<=0)throw new IOException("배포 파일 식별자가 올바르지 않습니다.");string expected="https://api.github.com/repos/"+repository+"/releases/assets/"+id;Uri api;if(!Uri.TryCreate(Str(asset,"url"),UriKind.Absolute,out api)||!ApiOrigin(api)||!api.AbsoluteUri.Equals(expected,StringComparison.OrdinalIgnoreCase))throw new IOException("비공개 배포 파일 주소가 저장소와 일치하지 않습니다.");release.ApiUrl=expected;release.Repository=repository;return release;}throw new IOException("비공개 업데이트 파일을 찾지 못했습니다.");}
+  static bool DownloadOrigin(Uri u,string repository){if(u==null||u.Scheme!="https"||u.Port!=443||u.UserInfo!=""||u.Fragment!="")return false;if(CredentialTarget(u,repository))return true;return new[]{"release-assets.githubusercontent.com","objects.githubusercontent.com","github-releases.githubusercontent.com"}.Contains(u.Host,StringComparer.OrdinalIgnoreCase);}
+  public async Task<string> DownloadPrivate(UpdateRelease release,string updateRoot,string token){
+   string repository=Repository(release.Repository);Uri current;if(!Uri.TryCreate(release.ApiUrl,UriKind.Absolute,out current)||!CredentialTarget(current,repository)||!Regex.IsMatch(current.AbsolutePath,@"/(?:releases/assets/[0-9]+|git/blobs/(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64}))\z")||current.Query!="")throw new IOException("비공개 자산 다운로드 주소가 올바르지 않습니다.");
+   string folder=Path.Combine(updateRoot,release.Version+"-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);string archive=Path.Combine(folder,"update.zip");
+   try{for(int hop=0;hop<6;hop++){
+    if(!DownloadOrigin(current,repository))throw new IOException("허용되지 않은 다운로드 연결 주소를 거부했습니다.");
+    using(var request=CredentialTarget(current,repository)?PrivateRequest(current,repository,token,true):new HttpRequestMessage(HttpMethod.Get,current))using(var response=await http.SendAsync(request,HttpCompletionOption.ResponseHeadersRead)){
+     // This check also rejects unexpected implicit redirects from a supplied handler.
+     if(response.RequestMessage!=null&&response.RequestMessage.RequestUri!=current)throw new IOException("예상하지 못한 자동 이동을 거부했습니다.");
+     int status=(int)response.StatusCode;if(status==301||status==302||status==303||status==307||status==308){var next=response.Headers.Location;if(next==null)throw new IOException("다운로드 이동 주소가 없습니다.");current=next.IsAbsoluteUri?next:new Uri(current,next);continue;}
+     PrivateError(response);if(response.Content.Headers.ContentLength>100L*1024*1024)throw new IOException("업데이트 파일이 너무 큽니다.");using(var input=await response.Content.ReadAsStreamAsync())using(var output=File.Create(archive)){var bytes=new byte[65536];long total=0;int n;while((n=await input.ReadAsync(bytes,0,bytes.Length))>0){total+=n;if(total>100L*1024*1024)throw new IOException("업데이트 크기 제한을 초과했습니다.");await output.WriteAsync(bytes,0,n);}}
+     if(!UpdateCore.HashValid(release.Hash)||!UpdateCore.HashFile(archive).Equals(release.Hash,StringComparison.OrdinalIgnoreCase))throw new IOException("업데이트 파일 검증에 실패하여 설치하지 않았습니다.");return archive;
+    }
+   }}catch(HttpRequestException){throw new IOException("업데이트 다운로드 연결에 실패했습니다. 인증 정보는 오류 기록에 포함하지 않습니다.");}throw new IOException("다운로드 이동 횟수가 너무 많습니다.");
+  }
+ }
+}

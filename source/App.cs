@@ -1,0 +1,191 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Media;
+using System.Windows.Markup;
+using System.Windows.Input;
+using System.Windows.Threading;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Globalization;
+using System.Reflection;
+using Forms=System.Windows.Forms;
+
+namespace DeskFlow {
+ class Program {
+  [STAThread] static int Main(string[] args) {
+   if(args.Contains("--verify-ui"))return Tests.UiRun();
+   if(args.Contains("--self-test"))return Tests.Run();
+   bool test=args.Contains("--ui-test");string dir=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),test?"DeskFlow-UITest":"DeskFlow");
+   bool first;using(var mutex=new Mutex(true,test?"Local\\DeskFlow-UITest":"Local\\DeskFlow-Widget",out first)){
+    if(!first){Forms.MessageBox.Show("DeskFlow가 이미 실행 중입니다. 알림 영역의 캘린더 아이콘을 두 번 클릭해 주세요.");return 0;}
+    try{var app=new Application();app.DispatcherUnhandledException+=(s,e)=>{Forms.MessageBox.Show("작업을 완료하지 못했습니다.\n"+e.Exception.Message,"DeskFlow");e.Handled=true;};var widget=new Widget(new Store(dir));widget.Window.Loaded+=(s,e)=>{Widget.MarkUpdateHealthy(args,dir);if(args.Contains("--start-hidden"))widget.Window.Hide();if(args.Contains("--update-verify-exit"))widget.Window.Close();};app.Run(widget.Window);return 0;}
+    catch(Exception e){Forms.MessageBox.Show(e.Message,"DeskFlow 시작 오류");return 1;}
+   }
+  }
+ }
+ partial class Widget {
+  public Window Window; internal DesktopWidget desktop; bool suppressNative; Store store; GoogleCalendar google; DateTime month=DateTime.Today,selected=DateTime.Today;Forms.NotifyIcon tray;DispatcherTimer timer;bool syncing,connecting;string syncError="";long eventChangeVersion;CancellationTokenSource loginCancel;
+  T Find<T>(string name) where T:class{return Window.FindName(name) as T;}
+  static Brush Brush(string hex){try{return (Brush)new BrushConverter().ConvertFromString(hex);}catch{return Brushes.SeaGreen;}}
+  TextBlock Text(string text,int size=12,string color="#4E5968"){return new TextBlock{Text=text,FontSize=size,Foreground=Brush(color),TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};}
+  Button Btn(string text,Action action){var b=new Button{Content=text};b.Click+=(s,e)=>action();return b;}
+  void Click(string name,Action action){Find<Button>(name).Click+=(s,e)=>action();}
+  void SafeSave(){try{store.Save();}catch(Exception e){MessageBox.Show(Window,"저장하지 못했습니다.\n"+e.Message,"DeskFlow");}}
+  public Widget(Store s,bool test=false){suppressNative=test;store=s;google=new GoogleCalendar(s);using(var stream=Assembly.GetExecutingAssembly().GetManifestResourceStream("Main.xaml"))Window=(Window)XamlReader.Load(stream);
+   using(var styles=Assembly.GetExecutingAssembly().GetManifestResourceStream("Controls.xaml"))Window.Resources.MergedDictionaries.Add((ResourceDictionary)XamlReader.Load(styles));
+   // The local default would otherwise shadow the shared checkbox style.
+   Window.Resources.Remove(typeof(CheckBox));
+   if(string.IsNullOrWhiteSpace(store.Data.UpdateRepository))store.Data.UpdateRepository="juragii/deskflow-windows";
+   if(store.Data.WidgetEngineVersion<3){store.Data.WidgetEngineVersion=3;store.Data.DesktopEnabled=true;store.Data.WidgetX=int.MinValue;store.Data.WidgetY=int.MinValue;}
+   if(store.Data.LayoutVersion<2){store.Data.Width=1100;store.Data.Height=800;store.Data.LayoutVersion=2;}
+   Window.Width=Math.Max(930,Math.Min(store.Data.Width,SystemParameters.WorkArea.Width));Window.Height=Math.Max(680,Math.Min(store.Data.Height,SystemParameters.WorkArea.Height));
+   Window.Left=Math.Max(SystemParameters.VirtualScreenLeft,Math.Min(store.Data.Left,SystemParameters.VirtualScreenLeft+SystemParameters.VirtualScreenWidth-Window.Width));Window.Top=Math.Max(SystemParameters.VirtualScreenTop,Math.Min(store.Data.Top,SystemParameters.VirtualScreenTop+SystemParameters.VirtualScreenHeight-Window.Height));
+   Window.Topmost=store.Data.Pinned;Window.Opacity=1;
+   using(var icon=Assembly.GetExecutingAssembly().GetManifestResourceStream("DeskFlow.ico")){Window.Icon=System.Windows.Media.Imaging.BitmapFrame.Create(icon,System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat,System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);}
+   Find<TextBlock>("TodayLabel").Text=DateTime.Today.ToString("yyyy년 M월 d일 dddd",CultureInfo.GetCultureInfo("ko-KR"))+" · 필요한 것만, 한눈에";
+   Click("WidgetToggle",()=>{store.Data.DesktopEnabled=!store.Data.DesktopEnabled;UpdateDesktop();SafeSave();});
+   Find<Grid>("DragBar").MouseLeftButtonDown+=(o,e)=>{if(e.OriginalSource is TextBlock||e.OriginalSource is Grid){try{Window.DragMove();}catch{}}};
+   Click("Exit",()=>Window.Hide());Click("Hide",()=>Window.Hide());Click("Settings",Settings);Click("Connect",Settings);
+   Click("Pin",()=>{Window.Topmost=!Window.Topmost;store.Data.Pinned=Window.Topmost;RenderPin();SafeSave();});
+   Click("Prev",()=>MoveMonth(-1));Click("Next",()=>MoveMonth(1));Click("Today",()=>{selected=DateTime.Today;month=selected;RenderCalendar();var ignored=Sync();});
+   Click("Refresh",()=>{var ignored=Sync();});Click("AddEvent",()=>EditEvent(null));Click("AddTask",AddTask);Find<TextBox>("TaskInput").KeyDown+=(o,e)=>{if(e.Key==Key.Enter)AddTask();};
+   Find<CheckBox>("ShowDone").IsChecked=store.Data.ShowDone;Find<CheckBox>("ShowDone").Click+=(o,e)=>{store.Data.ShowDone=Find<CheckBox>("ShowDone").IsChecked==true;SafeSave();RenderTasks();};
+   tray=new Forms.NotifyIcon{Icon=System.Drawing.Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location),Text="DeskFlow · 일정과 할 일",Visible=true};var menu=new Forms.ContextMenuStrip();menu.Items.Add("바탕화면 위젯 켜기 / 끄기",null,(o,e)=>{store.Data.DesktopEnabled=!store.Data.DesktopEnabled;UpdateDesktop();SafeSave();});menu.Items.Add("위젯 열기",null,(o,e)=>Reveal());menu.Items.Add("Google 캘린더",null,(o,e)=>Open("https://calendar.google.com/"));menu.Items.Add("종료",null,(o,e)=>Window.Close());tray.ContextMenuStrip=menu;tray.DoubleClick+=(o,e)=>Reveal();
+   Window.Closing+=(o,e)=>{StopUpdates();ScheduleUpdateOnExit();if(desktop!=null)desktop.Close();if(loginCancel!=null)loginCancel.Cancel();store.Data.Left=Window.Left;store.Data.Top=Window.Top;store.Data.Width=Window.ActualWidth;store.Data.Height=Window.ActualHeight;store.Data.Opacity=Window.Opacity;SafeSave();tray.Visible=false;tray.Dispose();if(timer!=null)timer.Stop();};
+   timer=new DispatcherTimer{Interval=TimeSpan.FromMinutes(5)};timer.Tick+=(o,e)=>{RenderCalendar();RenderTasks();var ignored=Sync();};timer.Start();
+   InitUpdates();RenderPin();RenderCalendar();RenderTasks();Window.Loaded+=(o,e)=>{UpdateDesktop();var ignored=Sync();};
+  }
+  void Reveal(){Window.Show();Window.WindowState=WindowState.Normal;Window.Activate();}
+  void RenderPin(){Find<Button>("Pin").Background=Window.Topmost?Brush("#E8F3FF"):Brushes.Transparent;}
+  void MoveMonth(int delta){month=new DateTime(month.Year,month.Month,1).AddMonths(delta);selected=month;RenderCalendar();var ignored=Sync();}
+  void RenderCalendar(){
+   Find<TextBlock>("MonthLabel").Text=month.ToString("yyyy년 M월");var grid=Find<UniformGrid>("MonthGrid");grid.Children.Clear();DateTime first=new DateTime(month.Year,month.Month,1);DateTime start=first.AddDays(-(int)first.DayOfWeek);
+   for(int i=0;i<42;i++){
+    DateTime d=start.AddDays(i);bool active=d.Date==selected.Date,inMonth=d.Month==month.Month;var entries=store.CalendarEvents.Where(e=>GoogleCalendar.OnDay(e,d)).OrderBy(e=>!e.AllDay).ThenBy(GoogleCalendar.Start).ToList();
+    var panel=new StackPanel{Margin=new Thickness(5,7,5,5)};
+    var day=Text(d.Day.ToString(),13,!inMonth?"#B0B8C1":d.DayOfWeek==DayOfWeek.Sunday?"#F04452":d.DayOfWeek==DayOfWeek.Saturday?"#3182F6":"#333D4B");day.HorizontalAlignment=HorizontalAlignment.Center;
+    var circle=new Border{Width=28,Height=28,CornerRadius=new CornerRadius(14),Child=day,HorizontalAlignment=HorizontalAlignment.Center};if(d.Date==DateTime.Today){circle.Background=Brush("#3182F6");day.Foreground=Brushes.White;}panel.Children.Add(circle);
+    foreach(var item in entries.Take(1)){var title=Text((entries.Count>1?entries.Count+"개 · ":"")+item.Title,9,"#1B64DA");title.TextWrapping=TextWrapping.NoWrap;title.TextTrimming=TextTrimming.CharacterEllipsis;panel.Children.Add(new Border{Background=Brush("#E8F3FF"),CornerRadius=new CornerRadius(4),Padding=new Thickness(4,2,4,2),Margin=new Thickness(0,3,0,0),Child=title});}
+
+    var button=new Button{Padding=new Thickness(0),Margin=new Thickness(2),HorizontalContentAlignment=HorizontalAlignment.Stretch,VerticalContentAlignment=VerticalAlignment.Top,Content=new Border{BorderThickness=new Thickness(active?1:0),BorderBrush=Brush("#A8CDFB"),Background=active?Brush("#F1F7FF"):Brushes.Transparent,CornerRadius=new CornerRadius(12),Child=panel},ToolTip=d.ToString("M월 d일")};button.Click+=(o,e)=>SelectDate(d);grid.Children.Add(button);
+   }
+   Find<TextBlock>("DayLabel").Text=selected.ToString("M월 d일 dddd",CultureInfo.GetCultureInfo("ko-KR"));var list=Find<StackPanel>("EventList");list.Children.Clear();var events=store.CalendarEvents.Where(e=>GoogleCalendar.OnDay(e,selected)).OrderBy(e=>!e.AllDay).ThenBy(e=>GoogleCalendar.Start(e)).ToList();
+   foreach(var e in events){var content=new StackPanel();content.Children.Add(Text(e.Title,13,"#191F28"));string time=e.AllDay?"하루 종일":GoogleCalendar.Start(e).ToString("MM.dd HH:mm")+" – "+GoogleCalendar.End(e).ToString("MM.dd HH:mm");var sub=Text(time+" · "+e.Calendar,10,"#8B95A1");sub.Margin=new Thickness(0,4,0,0);content.Children.Add(sub);var border=new Border{BorderBrush=Brush(e.Color),BorderThickness=new Thickness(3,0,0,0),Padding=new Thickness(10,4,0,4),Margin=new Thickness(0,5,0,8),Child=content,Cursor=Cursors.Hand,ToolTip="클릭하여 일정 보기 / 편집"};CalEvent item=e;border.MouseLeftButtonUp+=(o,a)=>EditEvent(item);list.Children.Add(border);}
+   if(events.Count==0)list.Children.Add(Text(google.Connected?"표시할 일정이 없습니다.":"연결하면 선택한 날짜의 일정이 여기에 표시됩니다.",12,"#8B95A1"));
+   Find<Button>("Connect").Visibility=google.Connected?Visibility.Collapsed:Visibility.Visible;RenderStatus();if(desktop!=null)desktop.Render(month,selected);
+  }
+  void RenderStatus(){Find<TextBlock>("Status").Text=syncing?"Google 캘린더에서 일정을 가져오고 있습니다…":syncError!=""?syncError:google.Connected?(store.Data.LastSync==""?"연결됨 · 동기화 대기 중":"마지막 동기화 "+store.Data.LastSync+" · 5분마다 새로고침"):"Google 미연결 · 할 일은 이 PC에 자동 저장됩니다.";}
+  async Task Sync(){if(syncing||connecting||!google.Connected)return;syncing=true;syncError="";RenderStatus();DateTime requested=month;long generation=eventChangeVersion;try{var events=await google.Fetch(requested);if(generation==eventChangeVersion)store.Data.Events=events;store.Data.LastSync=DateTime.Now.ToString("MM.dd HH:mm");SafeSave();}catch(Exception e){syncError="동기화 실패 · 이전 일정 유지 · "+e.Message;}finally{syncing=false;RenderCalendar();}if(month.Year!=requested.Year||month.Month!=requested.Month||generation!=eventChangeVersion)await Sync();}
+  void AddTask(){string title=Find<TextBox>("TaskInput").Text.Trim();if(title=="")return;if(title.Length>500){MessageBox.Show(Window,"할 일은 500자 이내로 입력해 주세요.");return;}var date=Find<DatePicker>("TaskDue").SelectedDate;store.Data.Tasks.Add(new Todo{Title=title,Due=date.HasValue?date.Value.ToString("yyyy-MM-dd"):""});SafeSave();Find<TextBox>("TaskInput").Clear();Find<DatePicker>("TaskDue").SelectedDate=null;RenderTasks();}
+  void RenderTasks(){if(desktop!=null)desktop.Render(month,selected);var list=Find<StackPanel>("TodoList");list.Children.Clear();int done=store.Data.Tasks.Count(t=>t.Done);Find<TextBlock>("TaskCount").Text=done+" / "+store.Data.Tasks.Count+" 완료";var tasks=store.Data.Tasks.Where(t=>!t.Done||store.Data.ShowDone).OrderBy(t=>t.Done).ThenBy(t=>t.Due==""?"9999":t.Due).ToList();
+   foreach(var task in tasks){var row=new Grid{Margin=new Thickness(0,2,0,2)};row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(27)});row.ColumnDefinitions.Add(new ColumnDefinition());row.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});row.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});var check=new CheckBox{IsChecked=task.Done,VerticalAlignment=VerticalAlignment.Center,ToolTip="완료 상태 변경"};check.Click+=(o,e)=>{task.Done=check.IsChecked==true;SafeSave();RenderTasks();};row.Children.Add(check);var p=new StackPanel{Margin=new Thickness(0,7,4,7)};var text=Text(task.Title,12,task.Done?"#B0B8C1":"#333D4B");if(task.Done)text.TextDecorations=TextDecorations.Strikethrough;p.Children.Add(text);if(task.Due!=""){DateTime due=DateTime.ParseExact(task.Due,"yyyy-MM-dd",CultureInfo.InvariantCulture);p.Children.Add(Text("마감 "+due.ToString("M월 d일")+(!task.Done&&due<DateTime.Today?" · 기한 지남":""),10,!task.Done&&due<DateTime.Today?"#F04452":"#8B95A1"));}Grid.SetColumn(p,1);row.Children.Add(p);var edit=Btn("수정",()=>EditTask(task));edit.FontSize=10;Grid.SetColumn(edit,2);row.Children.Add(edit);var del=Btn("×",()=>{if(MessageBox.Show(Window,"이 할 일을 삭제하시겠습니까?", "할 일 삭제",MessageBoxButton.YesNo)==MessageBoxResult.Yes){store.Data.Tasks.Remove(task);SafeSave();RenderTasks();}});del.FontSize=16;Grid.SetColumn(del,3);row.Children.Add(del);list.Children.Add(new Border{Background=Brushes.White,CornerRadius=new CornerRadius(9),Padding=new Thickness(10,0,2,0),Child=row});}
+   if(tasks.Count==0)list.Children.Add(Text(store.Data.Tasks.Count==0?"작은 할 일부터 하나 추가해 보세요.":"남은 할 일을 모두 마쳤습니다.",12,"#8B95A1"));
+  }
+  Window Dialog(string title,StackPanel content,int height){return new Window{Title=title,Owner=Window,Resources=Window.Resources,Icon=Window.Icon,Width=480,Height=height,MinHeight=300,WindowStartupLocation=WindowStartupLocation.CenterOwner,Background=Brush("#F4F6F9"),FontFamily=new FontFamily("Malgun Gothic"),Content=new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto},ResizeMode=ResizeMode.CanResize};}
+  void EditTask(Todo task){var p=new StackPanel{Margin=new Thickness(24)};p.Children.Add(Text("할 일 수정",20));var input=new TextBox{Text=task.Title,Margin=new Thickness(0,18,0,12)};p.Children.Add(input);p.Children.Add(Text("마감일 (선택)",12));var due=new DatePicker{SelectedDate=task.Due==""?(DateTime?)null:DateTime.ParseExact(task.Due,"yyyy-MM-dd",CultureInfo.InvariantCulture),Margin=new Thickness(0,8,0,16)};p.Children.Add(due);var w=Dialog("할 일 수정",p,300);p.Children.Add(Btn("저장",()=>{if(input.Text.Trim()==""||input.Text.Trim().Length>500){MessageBox.Show(w,"할 일을 1~500자로 입력해 주세요.");return;}task.Title=input.Text.Trim();task.Due=due.SelectedDate.HasValue?due.SelectedDate.Value.ToString("yyyy-MM-dd"):"";SafeSave();RenderTasks();w.Close();}));w.ShowDialog();}
+  void Settings(){
+   var p=new StackPanel{Margin=new Thickness(24)};var w=Dialog("DeskFlow 설정",p,650);p.Children.Add(Text("나만의 데스크 위젯",22,"#3182F6"));UpdateSettings(p,w);
+   p.Children.Add(Text("바탕화면 위젯",17));
+   var enabled=new CheckBox{Content="바탕화면에 캘린더 표시",IsChecked=store.Data.DesktopEnabled,Margin=new Thickness(0,12,0,8)};enabled.Click+=(o,e)=>{store.Data.DesktopEnabled=enabled.IsChecked==true;UpdateDesktop();SafeSave();};p.Children.Add(enabled);
+   p.Children.Add(Btn("위젯 화면 안으로 가져오기",()=>{store.Data.DesktopEnabled=true;enabled.IsChecked=true;UpdateDesktop();if(desktop!=null)desktop.ResetPosition();}));
+   var widgetTop=new CheckBox{Content="위젯을 다른 창 위에도 표시",IsChecked=store.Data.WidgetAlwaysOnTop};widgetTop.Click+=(o,e)=>{store.Data.WidgetAlwaysOnTop=widgetTop.IsChecked==true;if(desktop!=null)desktop.Attach();SafeSave();};p.Children.Add(widgetTop);
+   var opacityLabel=Text("배경 불투명도 · "+(int)(store.Data.WidgetOpacity*100)+"%",12);p.Children.Add(opacityLabel);
+   var slider=new Slider{Minimum=.15,Maximum=1,TickFrequency=.05,IsSnapToTickEnabled=true,Value=store.Data.WidgetOpacity,Margin=new Thickness(0,12,0,12)};slider.ValueChanged+=(o,e)=>{store.Data.WidgetOpacity=slider.Value;opacityLabel.Text="배경 불투명도 · "+(int)(slider.Value*100)+"%";if(desktop!=null)desktop.Appearance();};p.Children.Add(slider);
+   var locked=new CheckBox{Content="위젯 위치 잠금",IsChecked=store.Data.WidgetLocked};locked.Click+=(o,e)=>{store.Data.WidgetLocked=locked.IsChecked==true;if(desktop!=null)desktop.Appearance();SafeSave();};p.Children.Add(locked);
+   var dark=new CheckBox{Content="어두운 위젯 배경",IsChecked=store.Data.WidgetDark};dark.Click+=(o,e)=>{store.Data.WidgetDark=dark.IsChecked==true;if(desktop!=null)desktop.Render(month,selected);SafeSave();};p.Children.Add(dark);
+   var todos=new CheckBox{Content="위젯에 남은 할 일도 표시",IsChecked=store.Data.WidgetShowTasks};todos.Click+=(o,e)=>{store.Data.WidgetShowTasks=todos.IsChecked==true;if(desktop!=null)desktop.Appearance();SafeSave();};p.Children.Add(todos);
+   var desktopInfo=Text(DesktopInfo(),11,"#8B95A1");desktopInfo.Margin=new Thickness(0,8,0,8);p.Children.Add(desktopInfo);
+   p.Children.Add(Btn("바탕화면 다시 연결",()=>{if(!store.Data.DesktopEnabled){store.Data.DesktopEnabled=true;enabled.IsChecked=true;}UpdateDesktop();if(desktop!=null)desktop.Attach();desktopInfo.Text=DesktopInfo();UpdateDesktopStatus();}));
+   var help=Text("위젯은 독립 창으로 표시하고 일반 앱 뒤에 유지합니다. 본 화면을 숨긴 후 바탕화면에서 확인해 주세요. 보이지 않으면 ‘화면 안으로 가져오기’를 누르거나 ‘다른 창 위에도 표시’를 켜서 위치를 확인할 수 있습니다.",11,"#8B95A1");help.Margin=new Thickness(0,8,0,20);p.Children.Add(help);
+   p.Children.Add(Text("Google 캘린더 연결",17));
+   var info=Text("① Google Cloud에서 Calendar API를 활성화합니다.\n② Google Auth Platform에서 테스트 사용자에 본인 이메일을 등록합니다.\n③ 데이터 액세스에 ‘캘린더 일정 보기·편집’과 ‘캘린더 목록 읽기’를 추가합니다.\n④ 데스크톱 앱 OAuth JSON을 불러온 뒤 로그인합니다. 기존 버전 사용자는 쓰기 권한 승인을 위해 다시 로그인해 주세요.",12);info.Margin=new Thickness(0,12,0,12);p.Children.Add(info);
+   p.Children.Add(Btn("Google Cloud 설정 열기 ↗",()=>Open("https://console.cloud.google.com/apis/library/calendar-json.googleapis.com")));
+   var label=Text(store.Data.ClientId==""?"인증 파일을 아직 불러오지 않았습니다.":"데스크톱 앱 인증 파일이 준비되었습니다.",11);label.Margin=new Thickness(0,12,0,8);p.Children.Add(label);
+   var import=Btn("1. 인증 JSON 불러오기",()=>{if(connecting||syncing){label.Text="진행 중인 연결 또는 동기화가 끝난 후 불러와 주세요.";return;}var picker=new Microsoft.Win32.OpenFileDialog{Filter="Google OAuth JSON|*.json"};if(picker.ShowDialog(w)==true)try{google.Import(picker.FileName);label.Text="인증 파일 준비 완료. Google에 로그인해 주세요.";RenderCalendar();}catch(Exception e){label.Text=e.Message;}});p.Children.Add(import);
+   var login=Btn("2. Google 로그인 / 다시 연결",()=>{});login.Click+=async(o,e)=>{if(connecting||syncing){label.Text="진행 중인 연결 또는 동기화가 끝난 후 다시 시도해 주세요.";return;}connecting=true;login.IsEnabled=false;import.IsEnabled=false;label.Text="브라우저에서 로그인해 주세요. (최대 5분)";loginCancel=new CancellationTokenSource();try{await google.Connect(loginCancel.Token,stage=>label.Dispatcher.BeginInvoke(new Action(()=>label.Text=stage)));label.Text="Google 연결이 완료되었습니다.";}catch(OperationCanceledException){label.Text="로그인이 취소되었습니다.";}catch(Exception err){label.Text=err.Message;}finally{connecting=false;login.IsEnabled=true;import.IsEnabled=true;loginCancel.Dispose();loginCancel=null;}await Sync();RenderCalendar();};p.Children.Add(login);
+   var fallbackText=Text("로그인 후 127.0.0.1 화면에서 멈췄다면, 현재 브라우저 주소 전체를 아래에 붙여 넣고 ‘인증 응답 전달’을 누르세요. 이 주소는 다른 사람에게 보내지 마세요.",11);fallbackText.Margin=new Thickness(0,12,0,8);p.Children.Add(fallbackText);
+   var callbackInput=new TextBox{MinHeight=32,ToolTip="현재 로그인 시도의 http://127.0.0.1:포트/?state=…&code=… 주소",Margin=new Thickness(0,0,0,8)};p.Children.Add(callbackInput);
+   p.Children.Add(Btn("인증 응답 전달",()=>{if(google.SubmitCallback(callbackInput.Text)){callbackInput.Clear();label.Text="인증 응답을 받았습니다. 연결을 마무리하고 있습니다.";}else label.Text="현재 로그인 시도의 주소인지 확인해 주세요. Google 로그인을 먼저 시작한 후 5분 안에 주소 전체를 붙여 넣어 주세요.";}));
+   p.Children.Add(Btn("로그인 취소",()=>{if(loginCancel!=null)loginCancel.Cancel();}));
+   p.Children.Add(Btn("이 PC에서 연결 해제",()=>{if(connecting||syncing){label.Text="진행 중인 연결이나 동기화가 끝난 후 해제해 주세요.";return;}google.Disconnect();label.Text="이 PC의 로그인 정보와 일정 캐시를 삭제했습니다.";RenderCalendar();}));
+   var note=Text("앱에서 Google 일정을 추가·편집하려면 일정 쓰기 권한이 필요합니다. 이전 버전에서 연결했다면 ‘Google 로그인 / 다시 연결’을 한 번 진행해 주세요. 이 PC 일정은 로그인 없이 추가할 수 있으며, Google에 동기화되지 않습니다.",11,"#8B95A1");note.Margin=new Thickness(0,12,0,20);p.Children.Add(note);
+   var startup=new CheckBox{Content="Windows 로그인 시 자동 실행",IsChecked=File.Exists(StartupPath()),Margin=new Thickness(0,4,0,12)};startup.Click+=(o,e)=>{try{if(startup.IsChecked==true){string path=Assembly.GetExecutingAssembly().Location;File.WriteAllText(StartupPath(),"Set s=CreateObject(\"WScript.Shell\")\r\ns.Run Chr(34) & \""+path.Replace("\"","\"\"")+"\" & Chr(34), 1, False\r\n",Encoding.Unicode);}else if(File.Exists(StartupPath()))File.Delete(StartupPath());}catch(Exception err){label.Text=err.Message;startup.IsChecked=File.Exists(StartupPath());}};p.Children.Add(startup);
+   p.Children.Add(Btn("데이터 폴더 열기 / 백업",()=>Process.Start(new ProcessStartInfo(store.Dir){UseShellExecute=true})));
+   p.Children.Add(Text("위치와 크기는 종료할 때 저장됩니다. ‘―’를 누르면 트레이로 숨겨지며, 트레이 아이콘을 두 번 클릭하면 다시 표시됩니다.",11,"#8B95A1"));w.Closed+=(o,e)=>{if(loginCancel!=null)loginCancel.Cancel();SafeSave();};w.ShowDialog();
+  }
+  string StartupPath(){return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup),"DeskFlow.vbs");}
+  static void Open(string url){Uri uri;if(Uri.TryCreate(url,UriKind.Absolute,out uri)&&uri.Scheme=="https")Process.Start(new ProcessStartInfo(uri.AbsoluteUri){UseShellExecute=true});}
+ }
+ class Tests {
+  static void Assert(bool ok,string message){if(!ok)throw new Exception(message);}
+  static void SaveRender(Window w,string path){w.UpdateLayout();var bitmap=new System.Windows.Media.Imaging.RenderTargetBitmap((int)w.ActualWidth,(int)w.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(w);var png=new System.Windows.Media.Imaging.PngBitmapEncoder();png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));using(var f=File.Create(path))png.Save(f);}
+  static T Named<T>(Window w,string name) where T:class{return LogicalTreeHelper.FindLogicalNode(w,name) as T;}
+  static Button ButtonContent(DependencyObject root,string content){var b=root as Button;if(b!=null&&Convert.ToString(b.Content)==content)return b;foreach(object item in LogicalTreeHelper.GetChildren(root)){var d=item as DependencyObject;if(d!=null){var found=ButtonContent(d,content);if(found!=null)return found;}}return null;}
+  class FakeGoogle:System.Net.Http.HttpMessageHandler {
+   public int Refreshes,CalendarPages,EventPages;public List<string> Queries=new List<string>();
+   protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage req,CancellationToken token){
+    string body;string url=req.RequestUri.AbsoluteUri;Queries.Add(url);
+    if(url.Contains("oauth2.googleapis.com")){Refreshes++;body="{\"access_token\":\"mock-access\",\"expires_in\":3600}";}
+    else {Assert(req.Headers.Authorization!=null&&req.Headers.Authorization.Parameter=="mock-access","Bearer authorization");
+     if(url.Contains("calendarList")){CalendarPages++;body=url.Contains("pageToken")?"{\"items\":[{\"id\":\"hidden\",\"selected\":false}]}":"{\"items\":[{\"id\":\"test@example.com\",\"primary\":true,\"summary\":\"테스트\",\"backgroundColor\":\"#3182F6\"}],\"nextPageToken\":\"cal2\"}";}
+     else {EventPages++;body=url.Contains("pageToken")?"{\"items\":[{\"status\":\"cancelled\"},{\"summary\":\"종일\",\"start\":{\"date\":\"2026-11-13\"},\"end\":{\"date\":\"2026-11-15\"}}]}":"{\"items\":[{\"summary\":\"일정\",\"start\":{\"dateTime\":\"2026-11-13T14:00:00+09:00\"},\"end\":{\"dateTime\":\"2026-11-13T15:00:00+09:00\"}}],\"nextPageToken\":\"events2\"}";}
+    }return Task.FromResult(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK){Content=new System.Net.Http.StringContent(body)});
+   }
+  }
+  public static int UiRun(){
+   string dir=Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location),"verification");Directory.CreateDirectory(dir);int result=1;
+   try{var app=new Application();var store=new Store(Path.Combine(dir,Guid.NewGuid().ToString()));var widget=new Widget(store,true);var w=widget.Window;
+    w.Loaded+=(sender,args)=>w.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,new Action(()=>{try{
+     var grid=(UniformGrid)w.FindName("MonthGrid");Assert(grid.Children.Count==42,"Month grid 42 cells");
+     var dateControl=(DatePicker)w.FindName("TaskDue");dateControl.ApplyTemplate();var dateButton=(Button)dateControl.Template.FindName("PART_Button",dateControl);dateButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(dateControl.IsDropDownOpen,"Styled date picker opens");var datePopup=(Popup)dateControl.Template.FindName("PART_Popup",dateControl);Assert(datePopup.Child is System.Windows.Controls.Calendar,"Styled date picker calendar");dateControl.IsDropDownOpen=false;
+     ((TextBox)w.FindName("TaskInput")).Text="프로젝트 자료 정리";((DatePicker)w.FindName("TaskDue")).SelectedDate=DateTime.Today.AddDays(2);((Button)w.FindName("AddTask")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(store.Data.Tasks.Count==1,"Add handler");Assert(new Store(store.Dir).Data.Tasks.Count==1,"UI persistence");
+     var todo=(StackPanel)w.FindName("TodoList");var border=(Border)todo.Children[0];var row=(Grid)border.Child;var check=(CheckBox)row.Children[0];check.IsChecked=true;check.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));Assert(store.Data.Tasks[0].Done,"Complete handler");Assert(!todo.Children.OfType<Border>().Any(),"Completed hidden");
+     var show=(CheckBox)w.FindName("ShowDone");show.IsChecked=true;show.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));Assert(todo.Children.OfType<Border>().Count()==1,"Show completed");
+     ((Button)w.FindName("Next")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(((TextBlock)w.FindName("MonthLabel")).Text==DateTime.Today.AddMonths(1).ToString("yyyy년 M월"),"Next month");((Button)w.FindName("Today")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+     Exception editorError=null;
+     w.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,new Action(()=>{var dialog=Application.Current.Windows.Cast<Window>().FirstOrDefault(x=>x.Owner==w);try{Assert(dialog!=null,"Event editor opens");Named<TextBox>(dialog,"EventTitle").Text="PC 일정 검증";var full=Named<CheckBox>(dialog,"EventAllDay");full.IsChecked=true;full.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));Named<DatePicker>(dialog,"EventStartDate").SelectedDate=DateTime.Today;Named<DatePicker>(dialog,"EventEndDate").SelectedDate=DateTime.Today.AddDays(1);SaveRender(dialog,Path.Combine(dir,"event-editor-preview.png"));Named<Button>(dialog,"EventSave").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(store.Data.LocalEvents.Count==1&&store.Data.LocalEvents[0].AllDay,"Local event saved through UI");Assert(GoogleCalendar.End(store.Data.LocalEvents[0])==DateTime.Today.AddDays(2),"Inclusive last day UI mapping");}catch(Exception e){editorError=e;}finally{if(dialog!=null&&dialog.IsVisible)dialog.Close();}}));
+     ((Button)w.FindName("AddEvent")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));if(editorError!=null)throw editorError;
+     var localEvent=store.Data.LocalEvents[0];string localId=localEvent.Id;
+     w.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,new Action(()=>{var dialog=Application.Current.Windows.Cast<Window>().FirstOrDefault(x=>x.Owner==w);try{Named<TextBox>(dialog,"EventTitle").Text="수정된 PC 일정";var full=Named<CheckBox>(dialog,"EventAllDay");full.IsChecked=false;full.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));Named<DatePicker>(dialog,"EventEndDate").SelectedDate=DateTime.Today;Named<ComboBox>(dialog,"EventStartTime").Text="09:00";Named<ComboBox>(dialog,"EventEndTime").Text="10:00";Named<Button>(dialog,"EventSave").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(store.Data.LocalEvents.Count==1&&store.Data.LocalEvents[0].Id==localId&&store.Data.LocalEvents[0].Title=="수정된 PC 일정"&&!store.Data.LocalEvents[0].AllDay,"Local event edited through UI without duplication");Assert(new Store(store.Dir).Data.LocalEvents[0].Title=="수정된 PC 일정","Edited local event persisted");}catch(Exception e){editorError=e;}finally{if(dialog!=null&&dialog.IsVisible)dialog.Close();}}));
+     widget.EditEvent(localEvent);if(editorError!=null)throw editorError;
+     Assert(w.Icon!=null,"Calendar application icon");Assert(widget.desktop!=null,"Separate desktop widget created");
+     var nativeWindow=widget.desktop.Window;Assert(widget.desktop.Host.Attach(nativeWindow),"Native widget placement");var nativeHandle=new System.Windows.Interop.WindowInteropHelper(nativeWindow).Handle;Assert(DesktopHost.GetParent(nativeHandle)==IntPtr.Zero,"Layered widget remains top-level");Assert(DesktopHost.IsWindowVisible(nativeHandle)&&!DesktopHost.IsIconic(nativeHandle),"Native widget is visible");var beforeMove=widget.desktop.Host.Bounds();widget.desktop.Host.MoveScreen(beforeMove.Left+12,beforeMove.Top+12);var afterMove=widget.desktop.Host.Bounds();Assert(afterMove.Left==beforeMove.Left+12&&afterMove.Top==beforeMove.Top+12,"Native widget move");nativeWindow.WindowState=WindowState.Minimized;widget.desktop.Host.Maintain();Assert(!DesktopHost.IsIconic(nativeHandle)&&DesktopHost.IsWindowVisible(nativeHandle),"Native minimized widget restores without activation");widget.desktop.Host.MoveScreen(-32000,-32000);widget.desktop.ResetPosition();Assert(widget.desktop.Host.Bounds().Left>-30000,"Offscreen widget recovery");widget.desktop.Host.MoveScreen(beforeMove.Left,beforeMove.Top);widget.desktop.Host.Detach();
+     var dw=widget.desktop.Window;Assert(((UniformGrid)dw.FindName("WidgetDays")).Children.Count==42,"Widget month grid");
+     store.Data.WidgetOpacity=.4;widget.desktop.Appearance();Assert(((SolidColorBrush)((Border)dw.FindName("WidgetSurface")).Background).Color.A==102,"Background opacity independent from text");Assert(dw.Opacity==1,"Widget text stays opaque");
+     store.Data.WidgetDark=true;widget.desktop.Appearance();Assert(((SolidColorBrush)((Border)dw.FindName("WidgetSurface")).Background).Color.R==24,"Widget dark background");store.Data.WidgetDark=false;store.Data.WidgetOpacity=.9;widget.desktop.Appearance();
+     var lockButton=(Button)dw.FindName("WidgetLock");lockButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(!store.Data.WidgetLocked,"Widget position unlock");lockButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(store.Data.WidgetLocked,"Widget position lock");
+     ((Button)w.FindName("WidgetToggle")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(!store.Data.DesktopEnabled&&!dw.IsVisible,"Widget hides without closing main");((Button)w.FindName("WidgetToggle")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(store.Data.DesktopEnabled&&dw.IsVisible,"Widget show toggle");
+     store.Data.Events.Add(new CalEvent{Title="프로젝트 미팅",Start=DateTime.Today.AddHours(14).ToString("o"),End=DateTime.Today.AddHours(15).ToString("o"),Color="#3182F6",Calendar="예시 일정"});
+     store.Data.Events.Add(new CalEvent{Title="자료 검토",Start=DateTime.Today.AddDays(3).ToString("yyyy-MM-dd"),End=DateTime.Today.AddDays(4).ToString("yyyy-MM-dd"),AllDay=true,Color="#3182F6",Calendar="예시 일정"});
+     store.Data.Tasks.Add(new Todo{Title="발표 자료 마무리",Due=DateTime.Today.AddDays(1).ToString("yyyy-MM-dd")});store.Data.Tasks.Add(new Todo{Title="일정 확인하기"});widget.RefreshPreview();
+     SaveRender(w,Path.Combine(dir,"preview.png"));SaveRender(dw,Path.Combine(dir,"widget-preview.png"));
+     Exception settingsError=null;
+     w.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,new Action(()=>{var dialog=Application.Current.Windows.Cast<Window>().FirstOrDefault(x=>x.Owner==w);try{Assert(dialog!=null,"Settings opens");var panel=(StackPanel)((ScrollViewer)dialog.Content).Content;Assert(panel.Children.OfType<Button>().Any(x=>Convert.ToString(x.Content)=="인증 응답 전달"),"Manual callback button");Assert(panel.Children.OfType<TextBox>().Any(),"Manual callback input");Assert(panel.Children.OfType<Button>().Any(x=>Convert.ToString(x.Content)=="지금 업데이트 확인"),"Update settings present");var secret=Named<PasswordBox>(dialog,"PrivateUpdateToken");Assert(secret!=null&&secret.Password=="","Private token input starts empty");secret.Password=PrivateUpdateTests.DummyToken;ButtonContent(dialog,"인증 정보 암호화 저장").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(secret.Password==""&&new PrivateUpdateCredentials(store.Dir).Load(store.Data.UpdateRepository)==PrivateUpdateTests.DummyToken,"Masked credential UI saves encrypted token and clears input");ButtonContent(dialog,"이 PC의 업데이트 인증 지우기").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(new PrivateUpdateCredentials(store.Dir).Load(store.Data.UpdateRepository)=="","Credential UI clear");SaveRender(dialog,Path.Combine(dir,"update-settings-preview.png"));}catch(Exception e){settingsError=e;}finally{if(dialog!=null)dialog.Close();}}));
+     ((Button)w.FindName("Settings")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));if(settingsError!=null)throw settingsError;
+     File.WriteAllText(Path.Combine(dir,"ui-result.txt"),"PASS: main and widget 42-day calendars, add todo through button handler, disk persistence, completion, hide/show completed, month navigation, calendar app icon, independent widget window, background-only opacity, dark widget, position lock, hide/show widget, local event create/edit dialogs and persistence, WPF renders, settings opens, manual callback. Native top-level widget creation and placement tested in isolated desktop. User Explorer/Show Desktop behavior still requires confirmation.");result=0;
+    }catch(Exception e){File.WriteAllText(Path.Combine(dir,"ui-result.txt"),e.ToString());}finally{w.Close();}}));app.Run(w);
+   }catch(Exception e){File.WriteAllText(Path.Combine(dir,"ui-result.txt"),e.ToString());}return result;
+  }
+  public static int Run(){string root=Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location),"verification");Directory.CreateDirectory(root);string dir=Path.Combine(root,"core-"+Guid.NewGuid());Directory.CreateDirectory(dir);try{
+   var store=new Store(dir);store.Data.Tasks.Add(new Todo{Title="반도체 과제 <테스트>",Due="2026-11-13"});store.Save();store.Data.Tasks[0].Done=true;store.Save();var again=new Store(dir);Assert(again.Data.Tasks[0].Done&&again.Data.Tasks[0].Title=="반도체 과제 <테스트>","Todo roundtrip");
+   store.Token="test-only-refresh";Assert(store.Token=="test-only-refresh","DPAPI roundtrip");Assert(!Encoding.UTF8.GetString(File.ReadAllBytes(Path.Combine(dir,"account.bin"))).Contains("test-only-refresh"),"Encrypted at rest");store.Token="";Assert(store.Token=="","Disconnect");
+   var multi=new CalEvent{AllDay=true,Start="2026-11-13",End="2026-11-15"};Assert(GoogleCalendar.OnDay(multi,new DateTime(2026,11,14)),"Multi-day inclusive");Assert(!GoogleCalendar.OnDay(multi,new DateTime(2026,11,15)),"Exclusive all-day end");
+   var timed=new CalEvent{Start="2026-11-13T23:00:00+09:00",End="2026-11-14T01:00:00+09:00"};Assert(GoogleCalendar.End(timed)>GoogleCalendar.Start(timed),"Timezone parsing");
+   File.WriteAllText(Path.Combine(dir,"data.json"),"broken");Assert(new Store(dir).Data.Tasks[0].Title=="반도체 과제 <테스트>","Backup recovery");
+   string wrong=Path.Combine(dir,"web.json");File.WriteAllText(wrong,"{\"web\":{}}");bool rejected=false;try{new GoogleCalendar(store).Import(wrong);}catch{rejected=true;}Assert(rejected,"Reject non-desktop OAuth credentials");
+   LoopbackTests.Run().GetAwaiter().GetResult();
+   EditingTests.Run(root).GetAwaiter().GetResult();
+   UpdateTests.Run(root).GetAwaiter().GetResult();
+   PrivateUpdateTests.Run(root).GetAwaiter().GetResult();
+   store.Token="mock-refresh";store.Data.ClientId="test.apps.googleusercontent.com";var handler=new FakeGoogle();var api=new GoogleCalendar(store,new System.Net.Http.HttpClient(handler));var events=api.Fetch(new DateTime(2026,11,1)).GetAwaiter().GetResult();Assert(events.Count==2,"Events parsed, cancelled skipped");Assert(handler.CalendarPages==2&&handler.EventPages==2,"Calendar and event pagination");Assert(handler.Refreshes==1,"Access token reuse");Assert(handler.Queries.Any(q=>q.Contains("singleEvents=true")&&q.Contains("orderBy=startTime")&&q.Contains("timeMin=")),"Recurring expansion and range query");Assert(events[1].AllDay&&events[0].Title=="일정","Google event mapping");
+   File.WriteAllText(Path.Combine(root,"core-result.txt"),"PASS: persistence, backup recovery, DPAPI, logout, all-day exclusive end, multi-day, timezone, OAuth type validation, mocked Google refresh, Bearer auth, calendar and event pagination, recurrence parameters, cancelled event filtering. Loopback stream tests passed: idle preconnect, fragmented headers, favicon, wrong state, manual callback origin/state validation, cancellation, timeout, denial. Real TCP test availability is recorded separately in loopback-network.txt when blocked. Live Google OAuth not tested (user credentials required).");return 0;
+  }catch(Exception e){File.WriteAllText(Path.Combine(root,"core-result.txt"),e.ToString());return 1;}}
+ }
+}

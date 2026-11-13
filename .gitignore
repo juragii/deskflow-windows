@@ -1,0 +1,12 @@
+/source/DeskFlow.exe
+/source/DeskFlow.Updater.exe
+/source/DeskFlow.Updater.exe.config
+/source/verification/
+/source/out/
+**/github-update.bin
+**/account.bin
+**/data.json
+**/data.json.bak
+**/auth-log.txt
+**/Updates/
+*.pdb
