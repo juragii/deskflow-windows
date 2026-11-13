@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "juragii/deskflow-windows",
-  "version": "2.3.3.0",
-  "blob_sha": "6a167ac615d5c11cce2f6aa70dac801ac10b2778",
-  "sha256": "e20ce63b5945259d8a2a685def3732b20c27f357edd4a779d4c6bae3e523bf5c",
-  "notes": "Default one-hour event duration and confirmed event deletion"
+  "version": "2.3.4.0",
+  "blob_sha": "3b24d7e5a1cdca61a3e1127f8491e7f7189b1dbf",
+  "sha256": "4f9514c53e6445f3102b03d3e3042db661f4be724d1127d7a163489d1f5b5fb6",
+  "notes": "Choose recurring deletion scope and show event titles on desktop calendar"
 }
