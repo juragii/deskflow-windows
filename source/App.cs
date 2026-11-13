@@ -138,11 +138,33 @@ namespace DeskFlow {
     }return Task.FromResult(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK){Content=new System.Net.Http.StringContent(body)});
    }
   }
+  static void VerifyTimeAndDelete(Widget widget,Store store,string dir){
+   var w=widget.Window;Exception failure=null;
+   w.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,new Action(()=>{var dialog=Application.Current.Windows.Cast<Window>().FirstOrDefault(x=>x.Owner==w);try{
+    Assert(dialog!=null,"New event dialog");var start=Named<ComboBox>(dialog,"EventStartTime");var end=Named<ComboBox>(dialog,"EventEndTime");var day=Named<DatePicker>(dialog,"EventStartDate");var finish=Named<DatePicker>(dialog,"EventEndDate");
+    Assert(Named<Button>(dialog,"EventDelete").Visibility==Visibility.Collapsed,"No delete on unsaved draft");
+    start.Text="23:30";Assert(end.Text=="00:30"&&finish.SelectedDate==day.SelectedDate.Value.AddDays(1),"One hour default crosses midnight");
+    day.SelectedDate=day.SelectedDate.Value.AddDays(2);Assert(finish.SelectedDate==day.SelectedDate.Value.AddDays(1),"Start date also moves default end");
+    start.Text="01:15";Assert(end.Text=="02:15"&&finish.SelectedDate==day.SelectedDate,"Typed start sets one hour");
+    start.SelectedItem="14:30";Assert(end.Text=="15:30","Dropdown start sets one hour");
+    end.Text="16:30";Assert(end.Text=="16:30","Manual end override remains editable");
+    Named<TextBox>(dialog,"EventTitle").Text="시간·삭제 검증";Named<Button>(dialog,"EventSave").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(store.Data.LocalEvents.Count==1,"Time test saved");
+   }catch(Exception e){failure=e;}finally{if(dialog!=null&&dialog.IsVisible)dialog.Close();}}));
+   widget.EditEvent(null);if(failure!=null)throw failure;var item=store.Data.LocalEvents[0];
+   w.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,new Action(()=>{var dialog=Application.Current.Windows.Cast<Window>().FirstOrDefault(x=>x.Owner==w);try{
+    Assert(Named<ComboBox>(dialog,"EventEndTime").Text=="16:30","Opening existing event preserves custom duration");
+    Named<Button>(dialog,"EventDelete").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(store.Data.LocalEvents.Count==1,"Delete requires confirmation");
+    SaveRender(dialog,Path.Combine(dir,"event-delete-preview.png"));Named<Button>(dialog,"EventDeleteConfirm").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(store.Data.LocalEvents.Count==0&&new Store(store.Dir).Data.LocalEvents.Count==0,"Confirmed local deletion persisted");
+   }catch(Exception e){failure=e;}finally{if(dialog!=null&&dialog.IsVisible)dialog.Close();}}));
+   widget.EditEvent(item);if(failure!=null)throw failure;
+   ((Button)w.FindName("Today")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+   File.WriteAllText(Path.Combine(dir,"event-default-delete-result.txt"),"PASS: typed and dropdown start set end +1 hour, midnight/date rollover, manual end override, existing duration preserved, unsaved draft has no delete, local delete confirmation and disk persistence. Google conditional deletion tested with mock API.");
+  }
   public static int UiRun(){
    string dir=Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location),"verification");Directory.CreateDirectory(dir);int result=1;
    try{var app=new Application();var store=new Store(Path.Combine(dir,Guid.NewGuid().ToString()));var widget=new Widget(store,true);var w=widget.Window;
     w.Loaded+=(sender,args)=>w.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,new Action(async()=>{try{
-     await widget.VerifyCalendarSync(dir);
+     await widget.VerifyCalendarSync(dir);VerifyTimeAndDelete(widget,store,dir);
      var grid=(UniformGrid)w.FindName("MonthGrid");Assert(grid.Children.Count==42,"Month grid 42 cells");
      var dateControl=(DatePicker)w.FindName("TaskDue");dateControl.ApplyTemplate();var dateButton=(Button)dateControl.Template.FindName("PART_Button",dateControl);dateButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(dateControl.IsDropDownOpen,"Styled date picker opens");var datePopup=(Popup)dateControl.Template.FindName("PART_Popup",dateControl);Assert(datePopup.Child is System.Windows.Controls.Calendar,"Styled date picker calendar");dateControl.IsDropDownOpen=false;
      ((TextBox)w.FindName("TaskInput")).Text="프로젝트 자료 정리";((DatePicker)w.FindName("TaskDue")).SelectedDate=DateTime.Today.AddDays(2);((Button)w.FindName("AddTask")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(store.Data.Tasks.Count==1,"Add handler");Assert(new Store(store.Dir).Data.Tasks.Count==1,"UI persistence");

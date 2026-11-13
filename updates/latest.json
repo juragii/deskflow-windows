@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "juragii/deskflow-windows",
-  "version": "2.3.2.0",
-  "blob_sha": "585eb1f097d1c06ff65d834f33df619e210cc0b1",
-  "sha256": "6c0c3f6d63bb157561cb7f85211a604cf1ba632dd195c92fe36bb721d4eeaa7e",
-  "notes": "Immediate Google Calendar sync and adaptive automatic refresh"
+  "version": "2.3.3.0",
+  "blob_sha": "6a167ac615d5c11cce2f6aa70dac801ac10b2778",
+  "sha256": "e20ce63b5945259d8a2a685def3732b20c27f357edd4a779d4c6bae3e523bf5c",
+  "notes": "Default one-hour event duration and confirmed event deletion"
 }

@@ -31,6 +31,19 @@ namespace DeskFlow {
   static bool Flag(Dictionary<string,object> d,string key){return d.ContainsKey(key)&&d[key]!=null&&Convert.ToBoolean(d[key]);}
   public static CalEvent MapEvent(Dictionary<string,object> e,CalendarInfo calendar){var s=Obj(e["start"]);var t=Obj(e["end"]);bool all=s.ContainsKey("date")&&s["date"]!=null;bool attendees=e.ContainsKey("attendees")&&e["attendees"] is object[]&&((object[])e["attendees"]).Length>0;bool organiserSelf=!e.ContainsKey("organizer")||Flag(Obj(e["organizer"]),"self");string type=Str(e,"eventType");return new CalEvent{Id=Str(e,"id"),CalendarId=calendar.Id,Calendar=calendar.Title,Color=calendar.Color,Title=Str(e,"summary")==""?"(제목 없음)":Str(e,"summary"),Start=Str(s,all?"date":"dateTime"),End=Str(t,all?"date":"dateTime"),AllDay=all,Link=Str(e,"htmlLink"),Description=Str(e,"description"),Location=Str(e,"location"),ETag=Str(e,"etag"),RecurringId=Str(e,"recurringEventId"),EventType=type,HasAttendees=attendees,Writable=calendar.Writable&&!Flag(e,"locked")&&(type==""||type=="default")&&(!attendees||organiserSelf||Flag(e,"guestsCanModify"))};}
   public async Task<CalEvent> ReadEvent(string calendar,string id){var c=store.Data.Calendars.FirstOrDefault(x=>x.Id==calendar);if(c==null){await ListCalendars();c=store.Data.Calendars.FirstOrDefault(x=>x.Id==calendar);}if(c==null)throw new Exception("캘린더를 찾지 못했습니다. 동기화 후 다시 시도해 주세요.");return MapEvent(await Get("https://www.googleapis.com/calendar/v3/calendars/"+Enc(calendar)+"/events/"+Enc(id)),c);}
+  public async Task DeleteEvent(CalEvent item){
+   if(item==null||item.Local||!CanWrite||!item.Writable||string.IsNullOrEmpty(item.CalendarId)||string.IsNullOrEmpty(item.Id)||string.IsNullOrEmpty(item.ETag))throw new Exception("이 일정을 삭제할 권한 또는 최신 버전 정보가 없습니다. 일정을 다시 열거나 Google에 다시 로그인해 주세요.");
+   using(var request=new HttpRequestMessage(HttpMethod.Delete,"https://www.googleapis.com/calendar/v3/calendars/"+Enc(item.CalendarId)+"/events/"+Enc(item.Id)+"?sendUpdates=all")){
+    request.Headers.Authorization=new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer",await Access());request.Headers.TryAddWithoutValidation("If-Match",item.ETag);
+    using(var response=await http.SendAsync(request)){
+     if(response.IsSuccessStatusCode||response.StatusCode==HttpStatusCode.NotFound||response.StatusCode==HttpStatusCode.Gone)return;
+     if((int)response.StatusCode==412)throw new Exception("다른 곳에서 일정이 변경되었습니다. 삭제하지 않았습니다. 창을 닫고 다시 열어 확인해 주세요.");
+     if(response.StatusCode==HttpStatusCode.Unauthorized){expires=DateTime.MinValue;throw new Exception("Google 인증이 만료되었습니다. 다시 로그인해 주세요.");}
+     if(response.StatusCode==HttpStatusCode.Forbidden)throw new Exception("Google에서 삭제를 거부했습니다. 일정 쓰기 권한을 확인해 주세요.");
+     throw new Exception("일정 삭제 실패 ("+(int)response.StatusCode+"). 연결 상태를 확인하고 다시 시도해 주세요.");
+    }
+   }
+  }
   public async Task<CalEvent> SaveEvent(CalendarInfo calendar,EventDraft draft,CalEvent original=null){
    draft.Validate();if(!CanWrite)throw new Exception("일정 쓰기 권한이 필요합니다. 설정에서 Google 로그인을 다시 진행해 주세요.");if(!calendar.Writable)throw new Exception("이 캘린더는 읽기 전용입니다.");if(original!=null&&(!original.Writable||string.IsNullOrEmpty(original.ETag)))throw new Exception("이 일정은 편집할 수 없거나 버전 정보가 없습니다. 일정을 다시 열어 주세요.");
    string endpoint="https://www.googleapis.com/calendar/v3/calendars/"+Enc(calendar.Id)+"/events";if(original!=null)endpoint+="/"+Enc(original.Id);endpoint+="?sendUpdates=all";

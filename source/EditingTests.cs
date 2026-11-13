@@ -17,7 +17,9 @@ namespace DeskFlow {
     string url=request.RequestUri.AbsoluteUri;if(url.Contains("oauth2.googleapis.com"))return Json(new Dictionary<string,object>{{"access_token","mock"},{"expires_in",3600}},HttpStatusCode.OK);
     Check(request.Headers.Authorization.Parameter=="mock","Bearer");
     if(request.Method==HttpMethod.Get)return Json(Existing,HttpStatusCode.OK);
-    Writes++;Method=request.Method.Method;Uri=url;IEnumerable<string> tags;if(request.Headers.TryGetValues("If-Match",out tags))IfMatch=tags.First();Body=GoogleCalendar.Obj(Store.Json.DeserializeObject(await request.Content.ReadAsStringAsync()));
+    Writes++;Method=request.Method.Method;Uri=url;IEnumerable<string> tags;if(request.Headers.TryGetValues("If-Match",out tags))IfMatch=tags.First();
+    if(request.Method==HttpMethod.Delete)return Json(new Dictionary<string,object>(),WriteStatus==HttpStatusCode.OK?HttpStatusCode.NoContent:WriteStatus);
+    Body=GoogleCalendar.Obj(Store.Json.DeserializeObject(await request.Content.ReadAsStringAsync()));
     if(WriteStatus!=HttpStatusCode.OK)return Json(new Dictionary<string,object>(),WriteStatus);
     var response=new Dictionary<string,object>(Body);response["id"]=Body.ContainsKey("id")?Body["id"]:"existing";response["etag"]="\"next-version\"";return Json(response,HttpStatusCode.OK);
    }
@@ -33,9 +35,14 @@ namespace DeskFlow {
    draft.AllDay=false;draft.Start=draft.Start.AddHours(9);draft.End=draft.Start.AddHours(1);await google.SaveEvent(calendar,draft,original);Check(GoogleCalendar.Obj(server.Body["start"])["date"]==null,"all-day-to-timed removes date");
    server.WriteStatus=(HttpStatusCode)412;server.Existing=new Dictionary<string,object>(draft.Body(false));server.Existing["id"]="existing";server.Existing["summary"]="他の変更";server.Existing["etag"]="\"newer\"";bool conflict=false;int before=server.Writes;try{await google.SaveEvent(calendar,draft,original);}catch(Exception e){conflict=e.Message.Contains("변경");}Check(conflict&&server.Writes==before+1,"conflict does not overwrite or retry");
    server.WriteStatus=HttpStatusCode.Conflict;server.Existing=new Dictionary<string,object>(draft.Body(false));server.Existing["etag"]="\"saved\"";var duplicate=await google.SaveEvent(calendar,draft);Check(duplicate.Id==draft.Id,"retry reconciles existing insert id");
-   store.Data.GrantedScopes="https://www.googleapis.com/auth/calendar.readonly";bool denied=false;before=server.Writes;try{await google.SaveEvent(calendar,draft);}catch(Exception){denied=true;}Check(denied&&server.Writes==before,"old scope cannot write");
+   original.CalendarId=calendar.Id;original.Id="instance_20261113T090000Z";original.RecurringId="series";server.WriteStatus=HttpStatusCode.OK;await google.DeleteEvent(original);
+   Check(server.Method=="DELETE"&&server.Uri.Contains("instance_20261113T090000Z?sendUpdates=all")&&server.IfMatch==original.ETag,"conditional deletion targets only selected instance and notifies guests: "+server.Method+" "+server.Uri+" "+server.IfMatch);
+   foreach(var code in new[]{HttpStatusCode.NotFound,HttpStatusCode.Gone}){server.WriteStatus=code;await google.DeleteEvent(original);}
+   foreach(var code in new[]{(HttpStatusCode)412,HttpStatusCode.Forbidden,HttpStatusCode.ServiceUnavailable}){server.WriteStatus=code;bool rejected=false;try{await google.DeleteEvent(original);}catch{rejected=true;}Check(rejected,"delete failure surfaced "+code);}
+   original.Writable=false;before=server.Writes;try{await google.DeleteEvent(original);}catch{}Check(server.Writes==before,"read-only delete blocked");original.Writable=true;
+   store.Data.GrantedScopes="https://www.googleapis.com/auth/calendar.readonly";bool denied=false;before=server.Writes;try{await google.SaveEvent(calendar,draft);}catch(Exception){denied=true;}Check(denied&&server.Writes==before,"old scope cannot write");denied=false;try{await google.DeleteEvent(original);}catch{denied=true;}Check(denied&&server.Writes==before,"read-only scope cannot delete");
    var local=draft.LocalEvent();store.Data.LocalEvents.Add(local);store.Data.Events.Clear();store.Save();var loaded=new Store(store.Dir);Check(loaded.Data.LocalEvents.Count==1&&loaded.CalendarEvents.Count()==1,"local events survive cache refresh and persistence");
-   File.WriteAllText(Path.Combine(root,"editing-result.txt"),"PASS: Google POST/PATCH requests via mock handler, calendar target, stable insert ID and duplicate reconciliation, If-Match conflict protection, event field preservation, all-day/timed conversion, exclusive end, read-only scope guard, local event persistence. Live Google writes were not performed.");
+   File.WriteAllText(Path.Combine(root,"editing-result.txt"),"PASS: Google POST/PATCH requests via mock handler, calendar target, stable insert ID and duplicate reconciliation, If-Match conflict protection, event field preservation, all-day/timed conversion, exclusive end, read-only scope guard, local event persistence, conditional DELETE, selected recurrence instance, already-deleted reconciliation, deletion conflict/permission/server errors. Live Google writes were not performed.");
   }
  }
 }
