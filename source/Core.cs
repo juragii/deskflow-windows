@@ -14,14 +14,14 @@ using System.Diagnostics;
 using System.Globalization;
 
 namespace DeskFlow {
- public class Todo { public string Id=Guid.NewGuid().ToString(); public string Title=""; public string Due=""; public bool Done; }
+ public class Todo { public string Id=Guid.NewGuid().ToString(); public string Title=""; public string Due="",DueTime="",PcReminderKey="",PhoneReminderKey=""; public int ReminderMinutes; public bool Reminder=true; public bool Done; }
  public class CalEvent { public string Title,Start,End,Link,Calendar,Color; public bool AllDay; public string Id="",CalendarId="",Description="",Location="",ETag="",RecurringId="",EventType="default"; public bool Writable,Local,HasAttendees; }
  public class State {
   public List<Todo> Tasks=new List<Todo>(); public List<CalEvent> Events=new List<CalEvent>(); public List<CalEvent> LocalEvents=new List<CalEvent>(); public List<CalendarInfo> Calendars=new List<CalendarInfo>();
   public double Left=100,Top=80,Width=1100,Height=800,Opacity=1; public bool Pinned,ShowDone;
-  public string UpdateRepository="juragii/deskflow-windows"; public bool AutoUpdates=true; public bool AutoCalendarSync=true;
+  public string UpdateRepository="juragii/deskflow-windows"; public bool AutoUpdates=true; public bool AutoCalendarSync=true; public bool PcTaskAlerts=true,TelegramAlerts=false;
   public string GrantedScopes=""; public int WidgetEngineVersion=0; public bool WidgetAlwaysOnTop; public int LayoutVersion=0; public bool DesktopEnabled=true,WidgetLocked=true,WidgetDark=false,WidgetShowTasks=true;
-  public double WidgetOpacity=.9; public int WidgetX=int.MinValue,WidgetY=int.MinValue;
+  public double WidgetWidth=900,WidgetHeight=760; public bool WidgetAutoFit=true; public double WidgetOpacity=.9; public int WidgetX=int.MinValue,WidgetY=int.MinValue;
   public string ClientId="",ClientSecret="",LastSync="";
  }
  public class Store {

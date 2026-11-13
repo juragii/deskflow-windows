@@ -23,8 +23,10 @@ namespace DeskFlow {
    store=state;save=onSave;hidden=onHidden;suppressNative=test;
    using(var s=Assembly.GetExecutingAssembly().GetManifestResourceStream("DesktopWidget.xaml"))Window=(Window)XamlReader.Load(s);
    Window.Resources=main.Resources;Window.Icon=main.Icon;
-   Window.Width=Math.Min(Window.Width,Math.Max(320,SystemParameters.WorkArea.Width-32));Window.Height=Math.Min(Window.Height,Math.Max(400,SystemParameters.WorkArea.Height-32));
+   Window.Width=Math.Min(Math.Max(Window.MinWidth,store.Data.WidgetWidth),Math.Max(320,SystemParameters.WorkArea.Width-32));Window.Height=Math.Min(Math.Max(Window.MinHeight,store.Data.WidgetHeight),Math.Max(400,SystemParameters.WorkArea.Height-32));
    Window.Left=Math.Max(SystemParameters.WorkArea.Left,SystemParameters.WorkArea.Right-Window.Width-24);Window.Top=SystemParameters.WorkArea.Top+32;
+   Get<Button>("WidgetFit").Click+=(s,e)=>FitToContent();
+   var grip=Get<Thumb>("WidgetResize");grip.DragDelta+=(s,e)=>{store.Data.WidgetAutoFit=false;ResizeBy(e.HorizontalChange,e.VerticalChange);};grip.DragCompleted+=(s,e)=>SaveSize();
    Get<Button>("WidgetOpen").Click+=(s,e)=>open();Get<Button>("WidgetHide").Click+=(s,e)=>{Hide();store.Data.DesktopEnabled=false;save();hidden();};
    Get<Button>("WidgetLock").Click+=(s,e)=>{store.Data.WidgetLocked=!store.Data.WidgetLocked;Appearance();save();};
    Get<Button>("WidgetPrev").Click+=(s,e)=>month(-1);Get<Button>("WidgetNext").Click+=(s,e)=>month(1);Get<Button>("WidgetToday").Click+=(s,e)=>today();
@@ -36,6 +38,11 @@ namespace DeskFlow {
    monitor=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(500)};monitor.Tick+=(s,e)=>{if(!closed&&!suppressNative&&store.Data.DesktopEnabled){if(!Host.Attached)Attach();else Host.Maintain();}};monitor.Start();
    Get<Button>("WidgetRefresh").Click+=(s,e)=>sync();Select=select;Appearance();
   }
+  public void ResizeBy(double dx,double dy){var area=SystemParameters.WorkArea;Window.Width=Math.Max(Window.MinWidth,Math.Min(area.Width-16,Window.Width+dx));Window.Height=Math.Max(Window.MinHeight,Math.Min(area.Height-16,Window.Height+dy));}
+  void ClampOnScreen(){if(!Host.Attached)return;var r=Host.Bounds();var area=System.Windows.Forms.Screen.FromRectangle(new System.Drawing.Rectangle(r.Left,r.Top,r.Right-r.Left,r.Bottom-r.Top)).WorkingArea;int x=Math.Max(area.Left,Math.Min(r.Left,area.Right-(r.Right-r.Left))),y=Math.Max(area.Top,Math.Min(r.Top,area.Bottom-(r.Bottom-r.Top)));Host.MoveScreen(x,y);store.Data.WidgetX=x;store.Data.WidgetY=y;}
+  public void SaveSize(){ClampOnScreen();store.Data.WidgetWidth=Window.Width;store.Data.WidgetHeight=Window.Height;save();}
+  public void FitToContent(){store.Data.WidgetAutoFit=true;ApplyFit();SaveSize();if(Host.Attached)RestorePosition();}
+  void ApplyFit(){if(!store.Data.WidgetAutoFit)return;Window.Width=Math.Max(Window.MinWidth,Math.Min(900,SystemParameters.WorkArea.Width-48));Window.Height=Math.Max(Window.MinHeight,Math.Min(Get<Grid>("WidgetContent").Height+112,SystemParameters.WorkArea.Height-48));ClampOnScreen();}
   Action<DateTime> Select;
   bool FindButton(DependencyObject d){while(d!=null){if(d is Button)return true;if(d is FrameworkContentElement)d=((FrameworkContentElement)d).Parent;else d=VisualTreeHelper.GetParent(d);}return false;}
   public void Attach(){if(suppressNative)return;Host.Attach(Window,store.Data.WidgetAlwaysOnTop);Appearance();}
@@ -57,14 +64,16 @@ namespace DeskFlow {
    for(int i=0;i<42;i++){
     DateTime d=start.AddDays(i);bool active=d.Date==selected.Date;var entries=store.CalendarEvents.Where(x=>GoogleCalendar.OnDay(x,d)).OrderBy(x=>!x.AllDay).ThenBy(GoogleCalendar.Start).ToList();
     var panel=new StackPanel{Margin=new Thickness(3,4,3,3)};var label=Txt(d.Day.ToString(),11,active?"#FFFFFF":d.Month!=month.Month?(store.Data.WidgetDark?"#6B7684":"#B0B8C1"):d.DayOfWeek==DayOfWeek.Sunday?"#F04452":d.DayOfWeek==DayOfWeek.Saturday?"#3182F6":Ink);label.HorizontalAlignment=HorizontalAlignment.Center;panel.Children.Add(label);
-    foreach(var item in entries.Take(2)){var title=Txt(item.Title,10,active?"#FFFFFF":store.Data.WidgetDark?"#B6D5FF":"#1B64DA");title.MaxHeight=27;title.TextTrimming=TextTrimming.CharacterEllipsis;panel.Children.Add(new Border{Background=B(active?"#20FFFFFF":store.Data.WidgetDark?"#303182F6":"#183182F6"),CornerRadius=new CornerRadius(3),Margin=new Thickness(0,3,0,0),Padding=new Thickness(2,1,2,1),Child=title});}
+    foreach(var item in entries.Take(2)){var title=Txt(item.Title,10,active?"#FFFFFF":store.Data.WidgetDark?"#B6D5FF":"#1B64DA");title.MaxHeight=24;title.TextTrimming=TextTrimming.CharacterEllipsis;panel.Children.Add(new Border{Background=B(active?"#20FFFFFF":store.Data.WidgetDark?"#303182F6":"#183182F6"),CornerRadius=new CornerRadius(3),Margin=new Thickness(0,3,0,0),Padding=new Thickness(2,1,2,1),Child=title});}
     if(entries.Count>2)panel.Children.Add(Txt("+"+(entries.Count-2)+"개",9,active?"#FFFFFF":"#8B95A1"));
     string tooltip=d.ToString("M월 d일")+(entries.Count==0?" · 일정 없음":"\n"+string.Join("\n",entries.Select(x=>(x.AllDay?"종일":GoogleCalendar.Start(x).ToString("HH:mm"))+" · "+x.Title)));
-    var button=new Button{MinHeight=98,Padding=new Thickness(0),Margin=new Thickness(2),HorizontalContentAlignment=HorizontalAlignment.Stretch,VerticalContentAlignment=VerticalAlignment.Top,Content=panel,Background=active?B("#3182F6"):d.Date==DateTime.Today?B("#203182F6"):Brushes.Transparent,ToolTip=tooltip};button.Click+=(s,e)=>Select(d);days.Children.Add(button);
+    var button=new Button{ClipToBounds=true,Padding=new Thickness(0),Margin=new Thickness(2),HorizontalContentAlignment=HorizontalAlignment.Stretch,VerticalContentAlignment=VerticalAlignment.Top,Content=panel,Background=active?B("#3182F6"):d.Date==DateTime.Today?B("#203182F6"):Brushes.Transparent,ToolTip=tooltip};button.Click+=(s,e)=>Select(d);days.Children.Add(button);
    }
    var agenda=Get<StackPanel>("WidgetAgenda");agenda.Children.Clear();var events=store.CalendarEvents.Where(e=>GoogleCalendar.OnDay(e,selected)).OrderBy(e=>!e.AllDay).ThenBy(GoogleCalendar.Start).ToList();
-   foreach(var e in events.Take(3)){var row=new Grid{Margin=new Thickness(0,0,0,10)};row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(52)});row.ColumnDefinitions.Add(new ColumnDefinition());row.Children.Add(Txt(e.AllDay?"종일":GoogleCalendar.Start(e).ToString("HH:mm"),11,"#3182F6"));var title=Txt(e.Title,12);Grid.SetColumn(title,1);row.Children.Add(title);agenda.Children.Add(row);}if(events.Count==0)agenda.Children.Add(Txt("등록된 일정이 없습니다.",11,"#8B95A1"));if(events.Count>3)agenda.Children.Add(Txt("+ "+(events.Count-3)+"개 일정 · 본 화면에서 보기",10,"#8B95A1"));
-   var tasks=Get<StackPanel>("WidgetTasks");tasks.Children.Clear();foreach(var t in store.Data.Tasks.Where(x=>!x.Done).OrderBy(x=>x.Due==""?"9999":x.Due).Take(3)){var check=new CheckBox{Content=Txt(t.Title,11),Margin=new Thickness(0,3,0,3)};check.Click+=(s,e)=>{t.Done=check.IsChecked==true;save();Select(selected);};tasks.Children.Add(check);}if(tasks.Children.Count==0)tasks.Children.Add(Txt("남은 할 일이 없습니다.",11,"#8B95A1"));
+   foreach(var e in events){var row=new Grid{Margin=new Thickness(0,0,0,10)};row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(52)});row.ColumnDefinitions.Add(new ColumnDefinition());row.Children.Add(Txt(e.AllDay?"종일":GoogleCalendar.Start(e).ToString("HH:mm"),11,"#3182F6"));var title=Txt(e.Title,12);Grid.SetColumn(title,1);row.Children.Add(title);agenda.Children.Add(row);}if(events.Count==0)agenda.Children.Add(Txt("등록된 일정이 없습니다.",11,"#8B95A1"));
+   var tasks=Get<StackPanel>("WidgetTasks");tasks.Children.Clear();var pending=store.Data.Tasks.Where(x=>!x.Done).OrderBy(x=>x.Due==""?"9999":x.Due).ThenBy(x=>x.DueTime).ToList();Get<TextBlock>("WidgetTaskHeading").Text="남은 할 일 · "+pending.Count;
+   foreach(var t in pending){var content=new StackPanel();content.Children.Add(Txt(t.Title,12));if(t.Due!="")content.Children.Add(Txt("마감 "+t.Due.Substring(5).Replace("-","/")+(t.DueTime!=""?" "+t.DueTime:""),10,"#8B95A1"));var check=new CheckBox{Content=content,Margin=new Thickness(0,4,0,8),HorizontalContentAlignment=HorizontalAlignment.Stretch};check.Click+=(s,e)=>{t.Done=check.IsChecked==true;save();Select(selected);};tasks.Children.Add(check);}if(tasks.Children.Count==0)tasks.Children.Add(Txt("남은 할 일이 없습니다.",11,"#8B95A1"));
+   Get<Grid>("WidgetContent").Height=640;Window.UpdateLayout();double contentHeight=Get<StackPanel>("WidgetAgenda").DesiredSize.Height+(store.Data.WidgetShowTasks?Get<StackPanel>("WidgetTaskSection").DesiredSize.Height:0)+60;Get<Grid>("WidgetContent").Height=Math.Max(640,contentHeight);ApplyFit();
    Get<TextBlock>("WidgetSync").Text=store.Data.LastSync==""?"Google 연결은 본 화면의 설정에서 진행하세요.":"업데이트 "+store.Data.LastSync+" · Google 캘린더";
   }
   public void SyncStatus(string text,bool busy){Get<TextBlock>("WidgetSync").Text=text;Get<TextBlock>("WidgetSync").ToolTip=text;Get<Button>("WidgetRefresh").IsEnabled=!busy;}

@@ -23,7 +23,7 @@ namespace DeskFlow {
     if(tray!=null)tray.ShowBalloonTip(5000,"DeskFlow 업데이트","새 버전을 준비했습니다. 본 화면을 숨기면 위젯이 자동으로 다시 시작됩니다.",System.Windows.Forms.ToolTipIcon.Info);TryApplyUpdate();
    }catch(Exception ex){updateStatus="업데이트 보류 · "+ex.Message;nextUpdate=DateTime.UtcNow.AddMinutes(30);}finally{updateBusy=false;}
   }
-  bool CanApplyUpdate(){return !Window.IsVisible&&!connecting&&!syncing&&!Window.OwnedWindows.Cast<Window>().Any(w=>w.IsVisible)&&string.IsNullOrWhiteSpace(Find<TextBox>("TaskInput").Text);}
+  bool CanApplyUpdate(){return !Window.IsVisible&&!connecting&&!syncing&&(reminders==null||!reminders.Busy)&&!Window.OwnedWindows.Cast<Window>().Any(w=>w.IsVisible)&&string.IsNullOrWhiteSpace(Find<TextBox>("TaskInput").Text);}
   void TryApplyUpdate(bool manual=false){if(updateHandoff||string.IsNullOrEmpty(readyUpdatePlan)||(!manual&&!store.Data.AutoUpdates)||!CanApplyUpdate())return;try{store.Save();UpdateClient.StartApply(readyUpdatePlan);updateHandoff=true;Window.Close();}catch(Exception ex){updateStatus="업데이트 적용을 미뤘습니다. "+ex.Message;}}
   void ScheduleUpdateOnExit(){if(updateHandoff||string.IsNullOrEmpty(readyUpdatePlan)||!store.Data.AutoUpdates||connecting||Window.OwnedWindows.Cast<Window>().Any(w=>w.IsVisible)||!string.IsNullOrWhiteSpace(Find<TextBox>("TaskInput").Text))return;try{var plan=UpdateCore.Json.Deserialize<UpdatePlan>(File.ReadAllText(readyUpdatePlan));plan.Restart=false;File.WriteAllText(readyUpdatePlan,UpdateCore.Json.Serialize(plan));UpdateClient.StartApply(readyUpdatePlan);updateHandoff=true;}catch(Exception ex){updateStatus="종료 후 업데이트를 적용하지 못했습니다. "+ex.Message;}}
   void StopUpdates(){if(updateTimer!=null)updateTimer.Stop();}
