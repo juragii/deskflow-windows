@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "juragii/deskflow-windows",
-  "version": "2.3.8.0",
-  "blob_sha": "c9cef64c39dc725a5598532e15d397aa56e74585",
-  "sha256": "b1c6f23054efac8a94b1378b8907930db23ca79beb007aad70ea42943501f1e7",
-  "notes": "Nanal brand logo, full calendar event titles and numeric time steppers"
+  "version": "2.3.9.0",
+  "blob_sha": "3c059a92b78c4d5ffe195eac2c262d264777bc5e",
+  "sha256": "4e4d6d346462582ef159cea9fc77c5a1728debca0bdfd260f3ba8def5c7ddfe5",
+  "notes": "Add one, two and three day task reminders"
 }
