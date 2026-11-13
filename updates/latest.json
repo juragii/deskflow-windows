@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "juragii/deskflow-windows",
-  "version": "2.3.1.0",
-  "blob_sha": "51e482f820ce7047d99e8fb8322c3e515cbcb2d6",
-  "sha256": "8fb79f76307d6dc2c55dd5fd8b402462a70a77c6105a49a390caced6f601e4f7",
-  "notes": "Keep desktop widget visible during Show Desktop"
+  "version": "2.3.2.0",
+  "blob_sha": "585eb1f097d1c06ff65d834f33df619e210cc0b1",
+  "sha256": "6c0c3f6d63bb157561cb7f85211a604cf1ba632dd195c92fe36bb721d4eeaa7e",
+  "notes": "Immediate Google Calendar sync and adaptive automatic refresh"
 }

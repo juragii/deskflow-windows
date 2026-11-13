@@ -19,7 +19,7 @@ namespace DeskFlow {
  public class State {
   public List<Todo> Tasks=new List<Todo>(); public List<CalEvent> Events=new List<CalEvent>(); public List<CalEvent> LocalEvents=new List<CalEvent>(); public List<CalendarInfo> Calendars=new List<CalendarInfo>();
   public double Left=100,Top=80,Width=1100,Height=800,Opacity=1; public bool Pinned,ShowDone;
-  public string UpdateRepository="juragii/deskflow-windows"; public bool AutoUpdates=true;
+  public string UpdateRepository="juragii/deskflow-windows"; public bool AutoUpdates=true; public bool AutoCalendarSync=true;
   public string GrantedScopes=""; public int WidgetEngineVersion=0; public bool WidgetAlwaysOnTop; public int LayoutVersion=0; public bool DesktopEnabled=true,WidgetLocked=true,WidgetDark=false,WidgetShowTasks=true;
   public double WidgetOpacity=.9; public int WidgetX=int.MinValue,WidgetY=int.MinValue;
   public string ClientId="",ClientSecret="",LastSync="";

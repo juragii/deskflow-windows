@@ -19,7 +19,7 @@ namespace DeskFlow {
   T Get<T>(string n) where T:class{return Window.FindName(n) as T;}
   static Brush B(string s){return (Brush)new BrushConverter().ConvertFromString(s);}
   string Ink {get{return store.Data.WidgetDark?"#F2F4F6":"#333D4B";}}
-  public DesktopWidget(Window main,Store state,Action open,Action onHidden,Action<int> month,Action<DateTime> select,Action today,Action onSave,bool test=false){
+  public DesktopWidget(Window main,Store state,Action open,Action onHidden,Action<int> month,Action<DateTime> select,Action today,Action onSave,Action sync,bool test=false){
    store=state;save=onSave;hidden=onHidden;suppressNative=test;
    using(var s=Assembly.GetExecutingAssembly().GetManifestResourceStream("DesktopWidget.xaml"))Window=(Window)XamlReader.Load(s);
    Window.Resources=main.Resources;Window.Icon=main.Icon;
@@ -33,7 +33,7 @@ namespace DeskFlow {
    Window.Loaded+=(s,e)=>{if(!suppressNative){Attach();RestorePosition();}Appearance();};
    Window.Closed+=(s,e)=>{Host.Detach();closed=true;if(monitor!=null)monitor.Stop();};
    monitor=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(500)};monitor.Tick+=(s,e)=>{if(!closed&&!suppressNative&&store.Data.DesktopEnabled){if(!Host.Attached)Attach();else Host.Maintain();}};monitor.Start();
-   Select=select;Appearance();
+   Get<Button>("WidgetRefresh").Click+=(s,e)=>sync();Select=select;Appearance();
   }
   Action<DateTime> Select;
   bool FindButton(DependencyObject d){while(d!=null){if(d is Button)return true;if(d is FrameworkContentElement)d=((FrameworkContentElement)d).Parent;else d=VisualTreeHelper.GetParent(d);}return false;}
@@ -59,6 +59,7 @@ namespace DeskFlow {
    var tasks=Get<StackPanel>("WidgetTasks");tasks.Children.Clear();foreach(var t in store.Data.Tasks.Where(x=>!x.Done).OrderBy(x=>x.Due==""?"9999":x.Due).Take(3)){var check=new CheckBox{Content=Txt(t.Title,11),Margin=new Thickness(0,3,0,3)};check.Click+=(s,e)=>{t.Done=check.IsChecked==true;save();Select(selected);};tasks.Children.Add(check);}if(tasks.Children.Count==0)tasks.Children.Add(Txt("남은 할 일이 없습니다.",11,"#8B95A1"));
    Get<TextBlock>("WidgetSync").Text=store.Data.LastSync==""?"Google 연결은 본 화면의 설정에서 진행하세요.":"업데이트 "+store.Data.LastSync+" · Google 캘린더";
   }
+  public void SyncStatus(string text,bool busy){Get<TextBlock>("WidgetSync").Text=text;Get<TextBlock>("WidgetSync").ToolTip=text;Get<Button>("WidgetRefresh").IsEnabled=!busy;}
   public void Hide(){Host.SetDisplayEnabled(false);Window.Hide();}
   public void Show(){if(!closed){Host.SetDisplayEnabled(true);if(Window.WindowState==WindowState.Minimized)Window.WindowState=WindowState.Normal;Window.Show();if(!suppressNative){Attach();RestorePosition();}}}
   public void Close(){if(closed)return;if(!suppressNative&&Host.Attached)SavePosition();Host.Detach();Window.Close();}
