@@ -15,7 +15,7 @@ using System.Windows.Threading;
 namespace DeskFlow {
  public sealed class DesktopWidget {
   public Window Window {get;private set;} public readonly DesktopHost Host=new DesktopHost();
-  Store store;Action save,hidden;bool suppressNative,dragging,closed;DesktopHost.Point dragPoint;DesktopHost.Rect dragRect;DispatcherTimer monitor;
+  Store store;Action save,hidden;bool suppressNative,dragging,closed,layoutQueued;DesktopHost.Point dragPoint;DesktopHost.Rect dragRect;DispatcherTimer monitor;
   T Get<T>(string n) where T:class{return Window.FindName(n) as T;}
   static Brush B(string s){return (Brush)new BrushConverter().ConvertFromString(s);}
   string Ink {get{return store.Data.WidgetDark?"#F2F4F6":"#333D4B";}}
@@ -34,6 +34,7 @@ namespace DeskFlow {
    header.MouseMove+=(s,e)=>{if(!dragging||e.LeftButton!=MouseButtonState.Pressed)return;DesktopHost.Point p;DesktopHost.GetCursorPos(out p);Host.MoveScreen(dragRect.Left+p.X-dragPoint.X,dragRect.Top+p.Y-dragPoint.Y);};
    header.MouseLeftButtonUp+=(s,e)=>{if(!dragging)return;dragging=false;header.ReleaseMouseCapture();SavePosition();};header.LostMouseCapture+=(s,e)=>{dragging=false;};
    Window.Loaded+=(s,e)=>{if(!suppressNative){Attach();RestorePosition();}Appearance();};
+   Window.SizeChanged+=(s,e)=>{if(layoutQueued||closed)return;layoutQueued=true;Window.Dispatcher.BeginInvoke(DispatcherPriority.Loaded,new Action(()=>{layoutQueued=false;if(!closed)ResponsiveLayout();}));};
    Window.Closed+=(s,e)=>{Host.Detach();closed=true;if(monitor!=null)monitor.Stop();};
    monitor=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(500)};monitor.Tick+=(s,e)=>{if(!closed&&!suppressNative&&store.Data.DesktopEnabled){if(!Host.Attached)Attach();else Host.Maintain();}};monitor.Start();
    Get<Button>("WidgetRefresh").Click+=(s,e)=>sync();Select=select;Appearance();
@@ -42,7 +43,8 @@ namespace DeskFlow {
   void ClampOnScreen(){if(!Host.Attached)return;var r=Host.Bounds();var area=System.Windows.Forms.Screen.FromRectangle(new System.Drawing.Rectangle(r.Left,r.Top,r.Right-r.Left,r.Bottom-r.Top)).WorkingArea;int x=Math.Max(area.Left,Math.Min(r.Left,area.Right-(r.Right-r.Left))),y=Math.Max(area.Top,Math.Min(r.Top,area.Bottom-(r.Bottom-r.Top)));Host.MoveScreen(x,y);store.Data.WidgetX=x;store.Data.WidgetY=y;}
   public void SaveSize(){ClampOnScreen();store.Data.WidgetWidth=Window.Width;store.Data.WidgetHeight=Window.Height;save();}
   public void FitToContent(){store.Data.WidgetAutoFit=true;ApplyFit();SaveSize();if(Host.Attached)RestorePosition();}
-  void ApplyFit(){if(!store.Data.WidgetAutoFit)return;Window.Width=Math.Max(Window.MinWidth,Math.Min(900,SystemParameters.WorkArea.Width-48));Window.Height=Math.Max(Window.MinHeight,Math.Min(Get<Grid>("WidgetContent").Height+112,SystemParameters.WorkArea.Height-48));ClampOnScreen();}
+  void ApplyFit(){if(!store.Data.WidgetAutoFit)return;Window.Width=Math.Max(Window.MinWidth,Math.Min(900,SystemParameters.WorkArea.Width-48));Window.Height=Math.Max(Window.MinHeight,Math.Min(Get<Grid>("WidgetContent").Height+80,SystemParameters.WorkArea.Height-48));ClampOnScreen();}
+  void ResponsiveLayout(){var view=Get<Viewbox>("WidgetFitView");var content=Get<Grid>("WidgetContent");content.Width=Math.Max(860,view.ActualWidth);if(!store.Data.WidgetAutoFit)content.Height=Math.Max(640,Math.Max(view.ActualHeight,Get<StackPanel>("WidgetAgenda").DesiredSize.Height+(store.Data.WidgetShowTasks?Get<StackPanel>("WidgetTaskSection").DesiredSize.Height:0)+60));}
   Action<DateTime> Select;
   bool FindButton(DependencyObject d){while(d!=null){if(d is Button)return true;if(d is FrameworkContentElement)d=((FrameworkContentElement)d).Parent;else d=VisualTreeHelper.GetParent(d);}return false;}
   public void Attach(){if(suppressNative)return;Host.Attach(Window,store.Data.WidgetAlwaysOnTop);Appearance();}
@@ -73,7 +75,7 @@ namespace DeskFlow {
    foreach(var e in events){var row=new Grid{Margin=new Thickness(0,0,0,10)};row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(52)});row.ColumnDefinitions.Add(new ColumnDefinition());row.Children.Add(Txt(e.AllDay?"종일":GoogleCalendar.Start(e).ToString("HH:mm"),11,"#3182F6"));var title=Txt(e.Title,12);Grid.SetColumn(title,1);row.Children.Add(title);agenda.Children.Add(row);}if(events.Count==0)agenda.Children.Add(Txt("등록된 일정이 없습니다.",11,"#8B95A1"));
    var tasks=Get<StackPanel>("WidgetTasks");tasks.Children.Clear();var pending=store.Data.Tasks.Where(x=>!x.Done).OrderBy(x=>x.Due==""?"9999":x.Due).ThenBy(x=>x.DueTime).ToList();Get<TextBlock>("WidgetTaskHeading").Text="남은 할 일 · "+pending.Count;
    foreach(var t in pending){var content=new StackPanel();content.Children.Add(Txt(t.Title,12));if(t.Due!="")content.Children.Add(Txt("마감 "+t.Due.Substring(5).Replace("-","/")+(t.DueTime!=""?" "+t.DueTime:""),10,"#8B95A1"));var check=new CheckBox{Content=content,Margin=new Thickness(0,4,0,8),HorizontalContentAlignment=HorizontalAlignment.Stretch};check.Click+=(s,e)=>{t.Done=check.IsChecked==true;save();Select(selected);};tasks.Children.Add(check);}if(tasks.Children.Count==0)tasks.Children.Add(Txt("남은 할 일이 없습니다.",11,"#8B95A1"));
-   Get<Grid>("WidgetContent").Height=640;Window.UpdateLayout();double contentHeight=Get<StackPanel>("WidgetAgenda").DesiredSize.Height+(store.Data.WidgetShowTasks?Get<StackPanel>("WidgetTaskSection").DesiredSize.Height:0)+60;Get<Grid>("WidgetContent").Height=Math.Max(640,contentHeight);ApplyFit();
+   ResponsiveLayout();Get<Grid>("WidgetContent").Height=640;Window.UpdateLayout();double contentHeight=Get<StackPanel>("WidgetAgenda").DesiredSize.Height+(store.Data.WidgetShowTasks?Get<StackPanel>("WidgetTaskSection").DesiredSize.Height:0)+60;Get<Grid>("WidgetContent").Height=Math.Max(640,contentHeight);ApplyFit();
    Get<TextBlock>("WidgetSync").Text=store.Data.LastSync==""?"Google 연결은 본 화면의 설정에서 진행하세요.":"업데이트 "+store.Data.LastSync+" · Google 캘린더";
   }
   public void SyncStatus(string text,bool busy){Get<TextBlock>("WidgetSync").Text=text;Get<TextBlock>("WidgetSync").ToolTip=text;Get<Button>("WidgetRefresh").IsEnabled=!busy;}

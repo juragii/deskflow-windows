@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "juragii/deskflow-windows",
-  "version": "2.3.6.0",
-  "blob_sha": "fba0751b78ebf66254bc7639c46f4631864e7bcc",
-  "sha256": "4c646420506067a4d218f826a8cd54dd06e14169fae64ea6b6f420f7a061d4d5",
-  "notes": "Resizable no-scroll widget, minute time picker and task deadline reminders"
+  "version": "2.3.7.0",
+  "blob_sha": "ebba2a5e79c0e43d555aacbf407416f32ffba7fd",
+  "sha256": "a8919d196ffe63ae09fb8795a5d5dc902cabaab7ecd7ea439798ca3ff91ec7e1",
+  "notes": "Refined wordmark and compact calendar-focused widget layout"
 }
