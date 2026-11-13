@@ -35,7 +35,7 @@ namespace DeskFlow {
    taskTime=new TimePicker{Text="18:00",Width=140};Find<ContentControl>("TaskTimeHost").Content=taskTime;
    Action enabled=()=>{bool on=Find<CheckBox>("TaskTimedDue").IsChecked==true;taskTime.IsEnabled=on;Find<ComboBox>("TaskReminderOffset").IsEnabled=on;Find<CheckBox>("TaskReminder").IsEnabled=on;};
    Find<CheckBox>("TaskTimedDue").Click+=(s,e)=>enabled();enabled();
-   reminders=new ReminderEngine(store,items=>{if(suppressNative)return Task.FromResult(0);tray.BalloonTipTitle=items.Count==1?"DeskFlow · 할 일 마감 알림":"DeskFlow · "+items.Count+"개 할 일 마감";string message=string.Join("\n\n",items.Take(3).Select(TodoDeadline.Message))+(items.Count>3?"\n외 "+(items.Count-3)+"개":"");tray.BalloonTipText=message.Length>240?message.Substring(0,237)+"…":message;tray.ShowBalloonTip(10000);return Task.FromResult(0);},async item=>{var account=PhoneCredentials.Load(store.Dir);await new TelegramAlerts().Send(account,TodoDeadline.Message(item));},()=>store.Data.TelegramAlerts);
+   reminders=new ReminderEngine(store,items=>{if(suppressNative)return Task.FromResult(0);tray.BalloonTipTitle=items.Count==1?"나날 · 할 일 마감 알림":"나날 · "+items.Count+"개 할 일 마감";string message=string.Join("\n\n",items.Take(3).Select(TodoDeadline.Message))+(items.Count>3?"\n외 "+(items.Count-3)+"개":"");tray.BalloonTipText=message.Length>240?message.Substring(0,237)+"…":message;tray.ShowBalloonTip(10000);return Task.FromResult(0);},async item=>{var account=PhoneCredentials.Load(store.Dir);await new TelegramAlerts().Send(account,TodoDeadline.Message(item));},()=>store.Data.TelegramAlerts);
    reminderTimer=new DispatcherTimer{Interval=TimeSpan.FromSeconds(15)};reminderTimer.Tick+=async(s,e)=>{if(!suppressNative){await reminders.Check(DateTime.Now);if(reminderStatus!=null)reminderStatus.Text=reminders.LastError;}};reminderTimer.Start();
    Window.Loaded+=async(s,e)=>{if(!suppressNative)await reminders.Check(DateTime.Now);};
   }
@@ -44,8 +44,8 @@ namespace DeskFlow {
   static int OffsetValue(int index){return new[]{0,5,10,30,60}[Math.Max(0,Math.Min(4,index))];}
   void TaskAlertSettings(StackPanel p){
    p.Children.Add(Text("할 일 알림",17));var pc=new CheckBox{Content="컴퓨터에 마감 알림 표시",IsChecked=store.Data.PcTaskAlerts,Margin=new Thickness(0,10,0,8)};pc.Click+=(s,e)=>{store.Data.PcTaskAlerts=pc.IsChecked==true;SafeSave();};p.Children.Add(pc);
-   p.Children.Add(Btn("PC 테스트 알림",()=>{tray.BalloonTipTitle="DeskFlow · 테스트 알림";tray.BalloonTipText="이곳에 할 일의 마감 알림이 표시됩니다.";if(!suppressNative)tray.ShowBalloonTip(10000);}));
-   p.Children.Add(Text("알림은 DeskFlow가 실행 중이고 컴퓨터가 깨어 있을 때 표시됩니다. 놓친 마감은 다음 실행·절전 복귀 후 한 번 알립니다. Windows 알림/방해 금지 설정에 따라 표시가 제한될 수 있습니다.",11,"#8B95A1"));
+   p.Children.Add(Btn("PC 테스트 알림",()=>{tray.BalloonTipTitle="나날 · 테스트 알림";tray.BalloonTipText="이곳에 할 일의 마감 알림이 표시됩니다.";if(!suppressNative)tray.ShowBalloonTip(10000);}));
+   p.Children.Add(Text("알림은 나날이 실행 중이고 컴퓨터가 깨어 있을 때 표시됩니다. 놓친 마감은 다음 실행·절전 복귀 후 한 번 알립니다. Windows 알림/방해 금지 설정에 따라 표시가 제한될 수 있습니다.",11,"#8B95A1"));
    reminderStatus=Text(reminders==null?"":reminders.LastError,11,"#F04452");p.Children.Add(reminderStatus);PhoneSettings(p);
   }
   internal void EditTask(Todo task){var p=new StackPanel{Margin=new Thickness(24)};p.Children.Add(Text("할 일 수정",20));var input=new TextBox{Name="TodoTitle",Text=task.Title,Margin=new Thickness(0,18,0,12)};p.Children.Add(input);p.Children.Add(Text("마감일 (선택)",12));var due=new DatePicker{Name="TodoDate",SelectedDate=task.Due==""?(DateTime?)null:DateTime.ParseExact(task.Due,"yyyy-MM-dd",CultureInfo.InvariantCulture),Margin=new Thickness(0,8,0,12)};p.Children.Add(due);

@@ -7,6 +7,7 @@ $arguments += Join-Path $PSScriptRoot 'AssemblyInfo.cs'
 $arguments += '/win32manifest:' + (Join-Path $PSScriptRoot 'app.manifest')
 $arguments += '/win32icon:' + (Join-Path $PSScriptRoot 'DeskFlow.ico')
 $arguments += '/resource:' + (Join-Path $PSScriptRoot 'Controls.xaml') + ',Controls.xaml'
+$arguments += '/resource:' + (Join-Path $PSScriptRoot 'NanalLogo.png') + ',NanalLogo.png'
 $arguments += '/resource:' + (Join-Path $PSScriptRoot 'DeskFlow.ico') + ',DeskFlow.ico'
 $arguments += '/resource:' + (Join-Path $PSScriptRoot 'DesktopWidget.xaml') + ',DesktopWidget.xaml'
 $arguments += Join-Path $PSScriptRoot 'WidgetIntegration.cs'

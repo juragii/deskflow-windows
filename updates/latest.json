@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "juragii/deskflow-windows",
-  "version": "2.3.7.0",
-  "blob_sha": "ebba2a5e79c0e43d555aacbf407416f32ffba7fd",
-  "sha256": "a8919d196ffe63ae09fb8795a5d5dc902cabaab7ecd7ea439798ca3ff91ec7e1",
-  "notes": "Refined wordmark and compact calendar-focused widget layout"
+  "version": "2.3.8.0",
+  "blob_sha": "c9cef64c39dc725a5598532e15d397aa56e74585",
+  "sha256": "b1c6f23054efac8a94b1378b8907930db23ca79beb007aad70ea42943501f1e7",
+  "notes": "Nanal brand logo, full calendar event titles and numeric time steppers"
 }
