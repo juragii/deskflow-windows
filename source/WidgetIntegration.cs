@@ -8,7 +8,7 @@ namespace DeskFlow {
     if(desktop==null){desktop=new DesktopWidget(Window,store,Reveal,UpdateDesktopStatus,MoveMonth,SelectDate,()=>SelectDate(DateTime.Today),SafeSave,suppressNative);desktop.Show();}
     else desktop.Show();
     desktop.Render(month,selected);
-   }else if(desktop!=null){desktop.Window.Hide();}
+   }else if(desktop!=null){desktop.Hide();}
    UpdateDesktopStatus();
   }
   string DesktopInfo(){return !store.Data.DesktopEnabled?"바탕화면 위젯 꺼짐":desktop==null?"위젯 준비 중":suppressNative?"검증 모드 · 바탕화면 연결은 건너뜁니다.":desktop.Host.Attached?"독립 위젯을 표시하고 앱 뒤에 유지합니다.":desktop.Host.Error??"바탕화면 연결 대기 중";}

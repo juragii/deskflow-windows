@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "juragii/deskflow-windows",
-  "version": "2.3.0.0",
-  "blob_sha": "496f27d6a75896dd913771fec6ce628d76959c14",
-  "sha256": "3b0b0d6c812c39d966c3dddab8eb49569302851124e1fe8bb353fd3deef246ee",
-  "notes": "Private DeskFlow update"
+  "version": "2.3.1.0",
+  "blob_sha": "51e482f820ce7047d99e8fb8322c3e515cbcb2d6",
+  "sha256": "8fb79f76307d6dc2c55dd5fd8b402462a70a77c6105a49a390caced6f601e4f7",
+  "notes": "Keep desktop widget visible during Show Desktop"
 }

@@ -10,6 +10,7 @@ $arguments += '/resource:' + (Join-Path $PSScriptRoot 'Controls.xaml') + ',Contr
 $arguments += '/resource:' + (Join-Path $PSScriptRoot 'DeskFlow.ico') + ',DeskFlow.ico'
 $arguments += '/resource:' + (Join-Path $PSScriptRoot 'DesktopWidget.xaml') + ',DesktopWidget.xaml'
 $arguments += Join-Path $PSScriptRoot 'WidgetIntegration.cs'
+$arguments += Join-Path $PSScriptRoot 'ShowDesktopTests.cs'
 $arguments += Join-Path $PSScriptRoot 'DesktopHostV3.cs'
 $arguments += Join-Path $PSScriptRoot 'DesktopWidget.cs'
 $arguments += Join-Path $PSScriptRoot 'CalendarEditing.cs'

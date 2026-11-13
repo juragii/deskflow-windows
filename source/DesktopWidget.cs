@@ -24,15 +24,15 @@ namespace DeskFlow {
    using(var s=Assembly.GetExecutingAssembly().GetManifestResourceStream("DesktopWidget.xaml"))Window=(Window)XamlReader.Load(s);
    Window.Resources=main.Resources;Window.Icon=main.Icon;
    Window.Left=Math.Max(SystemParameters.WorkArea.Left,SystemParameters.WorkArea.Right-Window.Width-24);Window.Top=SystemParameters.WorkArea.Top+32;
-   Get<Button>("WidgetOpen").Click+=(s,e)=>open();Get<Button>("WidgetHide").Click+=(s,e)=>{Window.Hide();store.Data.DesktopEnabled=false;save();hidden();};
+   Get<Button>("WidgetOpen").Click+=(s,e)=>open();Get<Button>("WidgetHide").Click+=(s,e)=>{Hide();store.Data.DesktopEnabled=false;save();hidden();};
    Get<Button>("WidgetLock").Click+=(s,e)=>{store.Data.WidgetLocked=!store.Data.WidgetLocked;Appearance();save();};
    Get<Button>("WidgetPrev").Click+=(s,e)=>month(-1);Get<Button>("WidgetNext").Click+=(s,e)=>month(1);Get<Button>("WidgetToday").Click+=(s,e)=>today();
    var header=Get<Grid>("WidgetDrag");header.MouseLeftButtonDown+=(s,e)=>{if(store.Data.WidgetLocked||FindButton(e.OriginalSource as DependencyObject))return;DesktopHost.GetCursorPos(out dragPoint);dragRect=Host.Bounds();if(!Host.Attached){var h=new WindowInteropHelper(Window).Handle;DesktopHost.GetWindowRect(h,out dragRect);}dragging=true;header.CaptureMouse();e.Handled=true;};
    header.MouseMove+=(s,e)=>{if(!dragging||e.LeftButton!=MouseButtonState.Pressed)return;DesktopHost.Point p;DesktopHost.GetCursorPos(out p);Host.MoveScreen(dragRect.Left+p.X-dragPoint.X,dragRect.Top+p.Y-dragPoint.Y);};
    header.MouseLeftButtonUp+=(s,e)=>{if(!dragging)return;dragging=false;header.ReleaseMouseCapture();SavePosition();};header.LostMouseCapture+=(s,e)=>{dragging=false;};
    Window.Loaded+=(s,e)=>{if(!suppressNative){Attach();RestorePosition();}Appearance();};
-   Window.Closed+=(s,e)=>{closed=true;if(monitor!=null)monitor.Stop();};
-   monitor=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(700)};monitor.Tick+=(s,e)=>{if(!closed&&!suppressNative&&store.Data.DesktopEnabled){if(!Host.Attached)Attach();else Host.Maintain();}};monitor.Start();
+   Window.Closed+=(s,e)=>{Host.Detach();closed=true;if(monitor!=null)monitor.Stop();};
+   monitor=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(500)};monitor.Tick+=(s,e)=>{if(!closed&&!suppressNative&&store.Data.DesktopEnabled){if(!Host.Attached)Attach();else Host.Maintain();}};monitor.Start();
    Select=select;Appearance();
   }
   Action<DateTime> Select;
@@ -59,7 +59,8 @@ namespace DeskFlow {
    var tasks=Get<StackPanel>("WidgetTasks");tasks.Children.Clear();foreach(var t in store.Data.Tasks.Where(x=>!x.Done).OrderBy(x=>x.Due==""?"9999":x.Due).Take(3)){var check=new CheckBox{Content=Txt(t.Title,11),Margin=new Thickness(0,3,0,3)};check.Click+=(s,e)=>{t.Done=check.IsChecked==true;save();Select(selected);};tasks.Children.Add(check);}if(tasks.Children.Count==0)tasks.Children.Add(Txt("남은 할 일이 없습니다.",11,"#8B95A1"));
    Get<TextBlock>("WidgetSync").Text=store.Data.LastSync==""?"Google 연결은 본 화면의 설정에서 진행하세요.":"업데이트 "+store.Data.LastSync+" · Google 캘린더";
   }
-  public void Show(){if(!closed){if(Window.WindowState==WindowState.Minimized)Window.WindowState=WindowState.Normal;Window.Show();if(!suppressNative){Attach();RestorePosition();}}}
+  public void Hide(){Host.SetDisplayEnabled(false);Window.Hide();}
+  public void Show(){if(!closed){Host.SetDisplayEnabled(true);if(Window.WindowState==WindowState.Minimized)Window.WindowState=WindowState.Normal;Window.Show();if(!suppressNative){Attach();RestorePosition();}}}
   public void Close(){if(closed)return;if(!suppressNative&&Host.Attached)SavePosition();Host.Detach();Window.Close();}
  }
 }
