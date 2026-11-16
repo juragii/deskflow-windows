@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "juragii/deskflow-windows",
-  "version": "2.3.11.0",
-  "blob_sha": "f45973b8aead3125e4186864e6f3a557d3e291cf",
-  "sha256": "0e5ea17c6b2d18ab65c248ff3c8b6f8e370ef60a464914112413b1b73e82e50a",
-  "notes": "Verified daily quotations with author, work and original source"
+  "version": "2.3.12.0",
+  "blob_sha": "8ce0a7cd5d786e76163dde6532fede0cd105c728",
+  "sha256": "c21d6bb9f678a8746b47c5cd57e7b6318ab04497dd213addcb669eb27e1f2686",
+  "notes": "출처 있는 실제 인물의 명언 100개. 100일 동안 중복 없이 매일 변경하고 같은 날짜에는 재실행해도 유지합니다."
 }

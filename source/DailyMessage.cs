@@ -10,7 +10,7 @@ namespace DeskFlow {
  }
  static class DailyMessage {
   // Public-domain works/speeches; Korean translations rendered for Nanal.
-  internal static readonly DailyQuote[] Quotes={
+  static readonly DailyQuote[] LegacyQuotes={
    new DailyQuote("낙관은 성취로 이끄는 믿음이다. 희망 없이는 아무것도 이룰 수 없다.","헬렌 켈러","『낙관주의』 (1903)","Optimism is the faith that leads to achievement; nothing can be done without hope.","https://www.afb.org/about-afb/history/helen-keller/books-essays-speeches/optimism-1903"),
    new DailyQuote("천 리 길도 첫걸음에서 시작된다.","노자","『도덕경』 64장","千里之行，始於足下。","https://ctext.org/text.pl?if=en&node=11655&show=parallel","한문 본문"),
    new DailyQuote("우리가 두려워해야 할 유일한 것은 두려움 그 자체다.","프랭클린 D. 루스벨트","제1차 취임 연설 (1933)","the only thing we have to fear is fear itself","https://www.fdrlibrary.org/first-inaugural-curriculum-hub"),
@@ -24,18 +24,27 @@ namespace DeskFlow {
    new DailyQuote("자신을 믿어라.","랠프 월도 에머슨","『자기 신뢰』 (1841)","Trust thyself","https://anthology.lib.virginia.edu/work/Emerson/emerson-self-reliance"),
    new DailyQuote("우리가 깨어 있는 그날만이 밝아온다.","헨리 데이비드 소로","『월든』 「맺음말」","Only that day dawns to which we are awake.","https://www.gutenberg.org/cache/epub/205/pg205-images.html")
   };
-  internal static DailyQuote EntryForDate(DateTime day){return Quotes[(int)((day.Date.Ticks/TimeSpan.TicksPerDay)%Quotes.Length)];}
+  internal static readonly DailyQuote[] Quotes=QuoteCatalog.Expand(LegacyQuotes);
+  internal static DailyQuote EntryForDate(DateTime day,DateTime start){int index=(day.Date-start.Date).Days%Quotes.Length;return Quotes[index<0?index+Quotes.Length:index];}
+  internal static DailyQuote EntryForDate(DateTime day){return EntryForDate(day,new DateTime(2026,11,17));}
   internal static string ForDate(DateTime day){return EntryForDate(day).Text;}
   internal static void Verify(string root){
+   if(Quotes.Length<100)throw new Exception("At least 100 quotations required");
+   var start=new DateTime(2026,11,17);
+   if(Enumerable.Range(0,Quotes.Length).Select(i=>EntryForDate(start.AddDays(i),start).Text).Distinct().Count()!=Quotes.Length||EntryForDate(start,start)!=EntryForDate(start.AddDays(Quotes.Length),start))throw new Exception("Full-catalog no-repeat cycle failed");
+   if(Quotes.Select(q=>new string(q.Original.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray())).Distinct().Count()!=Quotes.Length)throw new Exception("Duplicate source quotation");
+   for(int offset=-40;offset<370;offset++)if(Enumerable.Range(0,32).Select(i=>EntryForDate(start.AddDays(offset+i),start).Text).Distinct().Count()!=32)throw new Exception("Monthly no-repeat window failed");
+   var persisted=new Store(Path.Combine(root,"quote-state"));persisted.Data.QuoteCycleStart="2026-11-17";persisted.Save();var reloaded=new Store(persisted.Dir);if(reloaded.Data.QuoteCycleStart!="2026-11-17")throw new Exception("Quote start did not survive restart");
    DateTime date=new DateTime(2026,12,31);if(ForDate(date)!=ForDate(date.AddHours(23))||ForDate(date)==ForDate(date.AddDays(1))||Quotes.Select(q=>q.Text).Distinct().Count()!=Quotes.Length)throw new Exception("Daily quote stability/rotation failed");
    foreach(var quote in Quotes){Uri uri;if(string.IsNullOrWhiteSpace(quote.Author)||string.IsNullOrWhiteSpace(quote.Work)||string.IsNullOrWhiteSpace(quote.Original)||!Uri.TryCreate(quote.Source,UriKind.Absolute,out uri)||uri.Scheme!="https")throw new Exception("Daily quote attribution/source missing");}
    if(ForDate(new DateTime(2028,2,29))==ForDate(new DateTime(2028,3,1)))throw new Exception("Daily quote leap-day rotation failed");
-   File.WriteAllText(Path.Combine(root,"daily-message-result.txt"),"PASS: local-date stability, date/year/leap-day rotation, unique translated quotes, author/work/excerpt/HTTPS source required for all entries. Source texts checked separately during curation; displayed quotes work offline.");
+   File.WriteAllText(Path.Combine(root,"daily-message-result.txt"),"PASS: 100 sourced quotes, 100-day no-repeat cycle, 32-day sliding windows, persisted cycle start, local-date stability, date/year/leap-day rotation, unique translated quotes, author/work/excerpt/HTTPS source required for all entries. Source texts checked separately during curation; displayed quotes work offline.");
   }
  }
  partial class Widget {
   DailyQuote displayedQuote;
-  internal void RefreshDailyHeader(DateTime date){displayedQuote=DeskFlow.DailyMessage.EntryForDate(date);Find<TextBlock>("DailyMessage").Text=displayedQuote.Text;Find<TextBlock>("DailyQuoteAuthor").Text=displayedQuote.Credit;Find<TextBlock>("DailyMessage").ToolTip=displayedQuote.Credit+"\n한국어 번역 · 원문·출처에서 인용 문장을 확인하세요.";Find<TextBlock>("TodayLabel").Text=date.ToString("yyyy년 M월 d일 dddd",System.Globalization.CultureInfo.GetCultureInfo("ko-KR"))+" · 필요한 것만, 한눈에";}
+  internal DailyQuote QuoteForDate(DateTime date){DateTime start;if(!DateTime.TryParseExact(store.Data.QuoteCycleStart,"yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture,System.Globalization.DateTimeStyles.None,out start)){start=DateTime.Today;store.Data.QuoteCycleStart=start.ToString("yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture);SafeSave();}return DeskFlow.DailyMessage.EntryForDate(date,start);}
+  internal void RefreshDailyHeader(DateTime date){displayedQuote=QuoteForDate(date);Find<TextBlock>("DailyMessage").Text=displayedQuote.Text;Find<TextBlock>("DailyQuoteAuthor").Text=displayedQuote.Credit;Find<TextBlock>("DailyMessage").ToolTip=displayedQuote.Credit+"\n한국어 번역 · 원문·출처에서 인용 문장을 확인하세요.";Find<TextBlock>("TodayLabel").Text=date.ToString("yyyy년 M월 d일 dddd",System.Globalization.CultureInfo.GetCultureInfo("ko-KR"))+" · 필요한 것만, 한눈에";}
   internal void ShowDailyQuoteSource(){var quote=displayedQuote;if(quote==null)return;var p=new StackPanel{Margin=new System.Windows.Thickness(24)};p.Children.Add(Text(quote.Text,21,"#191F28"));var credit=Text(quote.Credit,13,"#4E5968");credit.Margin=new System.Windows.Thickness(0,12,0,20);p.Children.Add(credit);p.Children.Add(Text(quote.Edition+" · 발췌",11,"#8B95A1"));var original=Text(quote.Original,15);original.Margin=new System.Windows.Thickness(0,8,0,20);p.Children.Add(original);p.Children.Add(Text("한국어 문장은 해당 인용 문장을 바탕으로 나날에서 번역했습니다.",11,"#8B95A1"));p.Children.Add(Btn("출처 문서 열기 ↗",()=>Open(quote.Source)));var w=Dialog("오늘의 명언 · 원문과 출처",p,440);w.Width=600;p.Children.Add(Btn("닫기",()=>w.Close()));w.ShowDialog();}
  }
 }
