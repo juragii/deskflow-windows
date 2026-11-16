@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "juragii/deskflow-windows",
-  "version": "2.3.10.0",
-  "blob_sha": "7ac9a60622f3f1a5660fcf8b4d656a1989825d0e",
-  "sha256": "bf4aeafed8d3c78d02a4d49504311253d7ae984fd8bc14f29345db621db86cc8",
-  "notes": "Daily encouragement and token-free public repository updates"
+  "version": "2.3.11.0",
+  "blob_sha": "f45973b8aead3125e4186864e6f3a557d3e291cf",
+  "sha256": "0e5ea17c6b2d18ab65c248ff3c8b6f8e370ef60a464914112413b1b73e82e50a",
+  "notes": "Verified daily quotations with author, work and original source"
 }
