@@ -20,8 +20,8 @@ namespace DeskFlow {
   NetworkAvailabilityChangedEventHandler networkHandler;PowerModeChangedEventHandler powerHandler;
   void InitCalendarSync(){
    timer=new DispatcherTimer{Interval=TimeSpan.FromSeconds(5)};
-   timer.Tick+=(s,e)=>{if(DateTime.Today!=lastCalendarDay){lastCalendarDay=DateTime.Today;Find<TextBlock>("TodayLabel").Text=DateTime.Today.ToString("yyyy년 M월 d일 dddd",System.Globalization.CultureInfo.GetCultureInfo("ko-KR"))+" · 필요한 것만, 한눈에";RenderCalendar();RenderTasks();}AutoSync(false);};timer.Start();
-   Window.Activated+=(s,e)=>AutoSync(false);
+   timer.Tick+=(s,e)=>{if(DateTime.Today!=lastCalendarDay){lastCalendarDay=DateTime.Today;RefreshDailyHeader(DateTime.Today);RenderCalendar();RenderTasks();}AutoSync(false);};timer.Start();
+   Window.Activated+=(s,e)=>{RefreshDailyHeader(DateTime.Today);AutoSync(false);};
    Window.Loaded+=(s,e)=>AutoSync(false);
    if(suppressNative)return;
    networkHandler=(s,e)=>{if(e.IsAvailable)QueueRecovery();};powerHandler=(s,e)=>{if(e.Mode==PowerModes.Resume)QueueRecovery();};

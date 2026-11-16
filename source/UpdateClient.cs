@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 
 namespace DeskFlow {
- public class UpdateRelease {public string Version,Url,Hash,Notes,ApiUrl,Repository;}
+ public class UpdateRelease {public bool Anonymous;public string Version,Url,Hash,Notes,ApiUrl,Repository;}
  public sealed partial class UpdateClient {
   HttpClient http;public UpdateClient(HttpClient client=null){http=client??new HttpClient(new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromMinutes(5)};if(http.DefaultRequestHeaders.Authorization!=null)throw new ArgumentException("업데이트 통신에는 기본 인증 헤더를 설정할 수 없습니다.");ServicePointManager.SecurityProtocol=SecurityProtocolType.Tls12;http.DefaultRequestHeaders.UserAgent.ParseAdd("DeskFlow/2.3");}
   public static string Repository(string text){string s=(text??"").Trim();if(s.StartsWith("https://github.com/",StringComparison.OrdinalIgnoreCase))s=s.Substring(19).TrimEnd('/');if(s.EndsWith(".git"))s=s.Substring(0,s.Length-4);if(!Regex.IsMatch(s,@"\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9_.-]{1,100}\z")||s.Split('/')[1]=="."||s.Split('/')[1]=="..")throw new ArgumentException("GitHub 저장소를 계정/저장소 형식으로 입력해 주세요.");return s;}

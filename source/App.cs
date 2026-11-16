@@ -50,7 +50,7 @@ namespace DeskFlow {
    Window.Left=Math.Max(SystemParameters.VirtualScreenLeft,Math.Min(store.Data.Left,SystemParameters.VirtualScreenLeft+SystemParameters.VirtualScreenWidth-Window.Width));Window.Top=Math.Max(SystemParameters.VirtualScreenTop,Math.Min(store.Data.Top,SystemParameters.VirtualScreenTop+SystemParameters.VirtualScreenHeight-Window.Height));
    Window.Topmost=store.Data.Pinned;Window.Opacity=1;
    using(var icon=Assembly.GetExecutingAssembly().GetManifestResourceStream("DeskFlow.ico")){Window.Icon=System.Windows.Media.Imaging.BitmapFrame.Create(icon,System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat,System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);}
-   Find<TextBlock>("TodayLabel").Text=DateTime.Today.ToString("yyyy년 M월 d일 dddd",CultureInfo.GetCultureInfo("ko-KR"))+" · 필요한 것만, 한눈에";
+   RefreshDailyHeader(DateTime.Today);
    Click("WidgetToggle",()=>{store.Data.DesktopEnabled=!store.Data.DesktopEnabled;UpdateDesktop();SafeSave();});
    Find<Grid>("DragBar").MouseLeftButtonDown+=(o,e)=>{if(e.OriginalSource is TextBlock||e.OriginalSource is Grid){try{Window.DragMove();}catch{}}};
    Click("Exit",()=>Window.Hide());Click("Hide",()=>Window.Hide());Click("Settings",Settings);Click("Connect",Settings);
@@ -173,7 +173,7 @@ namespace DeskFlow {
    try{var app=new Application();var store=new Store(Path.Combine(dir,Guid.NewGuid().ToString()));var widget=new Widget(store,true);var w=widget.Window;
     w.Loaded+=(sender,args)=>w.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,new Action(async()=>{try{
      await widget.VerifyCalendarSync(dir);VerifyTimeAndDelete(widget,store,dir);widget.VerifyRecurringDeletion(dir);VerifyTodoDeadline(widget,store,dir);
-     var grid=(Grid)w.FindName("MonthGrid");Assert(grid.Children.Count==42,"Month grid 42 cells");
+     string greeting=((TextBlock)w.FindName("DailyMessage")).Text;Assert(greeting==DailyMessage.ForDate(DateTime.Today),"Daily greeting on startup");widget.RefreshDailyHeader(DateTime.Today.AddDays(1));Assert(((TextBlock)w.FindName("DailyMessage")).Text!=greeting,"Daily greeting changes on date rollover");widget.RefreshDailyHeader(DateTime.Today);var grid=(Grid)w.FindName("MonthGrid");Assert(grid.Children.Count==42,"Month grid 42 cells");
      var dateControl=(DatePicker)w.FindName("TaskDue");dateControl.ApplyTemplate();var dateButton=(Button)dateControl.Template.FindName("PART_Button",dateControl);dateButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(dateControl.IsDropDownOpen,"Styled date picker opens");var datePopup=(Popup)dateControl.Template.FindName("PART_Popup",dateControl);Assert(datePopup.Child is System.Windows.Controls.Calendar,"Styled date picker calendar");dateControl.IsDropDownOpen=false;
      ((TextBox)w.FindName("TaskInput")).Text="프로젝트 자료 정리";((DatePicker)w.FindName("TaskDue")).SelectedDate=DateTime.Today.AddDays(2);((Button)w.FindName("AddTask")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Assert(store.Data.Tasks.Count==1,"Add handler");Assert(new Store(store.Dir).Data.Tasks.Count==1,"UI persistence");
      var todo=(StackPanel)w.FindName("TodoList");var border=(Border)todo.Children[0];var row=(Grid)border.Child;var check=(CheckBox)row.Children[0];check.IsChecked=true;check.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));Assert(store.Data.Tasks[0].Done,"Complete handler");Assert(!todo.Children.OfType<Border>().Any(),"Completed hidden");
@@ -216,7 +216,7 @@ namespace DeskFlow {
    var timed=new CalEvent{Start="2026-11-13T23:00:00+09:00",End="2026-11-14T01:00:00+09:00"};Assert(GoogleCalendar.End(timed)>GoogleCalendar.Start(timed),"Timezone parsing");
    File.WriteAllText(Path.Combine(dir,"data.json"),"broken");Assert(new Store(dir).Data.Tasks[0].Title=="반도체 과제 <테스트>","Backup recovery");
    string wrong=Path.Combine(dir,"web.json");File.WriteAllText(wrong,"{\"web\":{}}");bool rejected=false;try{new GoogleCalendar(store).Import(wrong);}catch{rejected=true;}Assert(rejected,"Reject non-desktop OAuth credentials");
-   ReminderTests.Run(root).GetAwaiter().GetResult();CalendarSyncTests.Run(root);LoopbackTests.Run().GetAwaiter().GetResult();
+   PublicUpdateTests.Run(root).GetAwaiter().GetResult();DailyMessage.Verify(root);ReminderTests.Run(root).GetAwaiter().GetResult();CalendarSyncTests.Run(root);LoopbackTests.Run().GetAwaiter().GetResult();
    EditingTests.Run(root).GetAwaiter().GetResult();
    UpdateTests.Run(root).GetAwaiter().GetResult();
    PrivateUpdateTests.Run(root).GetAwaiter().GetResult();

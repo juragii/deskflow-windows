@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "juragii/deskflow-windows",
-  "version": "2.3.9.0",
-  "blob_sha": "3c059a92b78c4d5ffe195eac2c262d264777bc5e",
-  "sha256": "4e4d6d346462582ef159cea9fc77c5a1728debca0bdfd260f3ba8def5c7ddfe5",
-  "notes": "Add one, two and three day task reminders"
+  "version": "2.3.10.0",
+  "blob_sha": "7ac9a60622f3f1a5660fcf8b4d656a1989825d0e",
+  "sha256": "bf4aeafed8d3c78d02a4d49504311253d7ae984fd8bc14f29345db621db86cc8",
+  "notes": "Daily encouragement and token-free public repository updates"
 }
