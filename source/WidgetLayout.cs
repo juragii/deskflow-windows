@@ -42,38 +42,66 @@ namespace DeskFlow {
    foreach(var item in Get<StackPanel>("WidgetTasks").Children){var check=item as CheckBox;if(check==null)continue;check.Margin=new Thickness(0,4*Layout.Spacing,0,8*Layout.Spacing);check.LayoutTransform=new ScaleTransform(Layout.CheckSize,Layout.CheckSize);}
   }
   public void Customize(){
-   var panel=new StackPanel{Margin=new Thickness(24)};var editor=new Window{Title="위젯 꾸미기",Owner=Window,Width=460,Height=700,MinWidth=380,MinHeight=400,WindowStartupLocation=WindowStartupLocation.CenterScreen,Background=B(store.Data.WidgetDark?"#18202B":"#F4F6F9"),Foreground=B(Ink),FontFamily=Window.FontFamily,ShowInTaskbar=false,Resources=Window.Resources,Content=new ScrollViewer{Content=panel,VerticalScrollBarVisibility=ScrollBarVisibility.Auto}};
+   var panel=new StackPanel{Margin=new Thickness(24)};var editor=new Window{Title="위젯 꾸미기",Owner=Window,Width=460,Height=700,MinWidth=380,MinHeight=400,WindowStartupLocation=WindowStartupLocation.CenterScreen,Background=B(store.Data.WidgetDark?"#18202B":"#F4F6F9"),Foreground=B(Ink),FontFamily=Window.FontFamily,ShowInTaskbar=false,Resources=Window.Resources,};
+   var preview=new Grid{Height=176,Margin=new Thickness(24,12,24,0),ClipToBounds=true};
+   var surface=Get<Border>("WidgetSurface");
+   string renderedBounds=null;
+   preview.Children.Add(new Border{Background=new VisualBrush(surface){Stretch=Stretch.Fill},BorderBrush=B("#D5DEE8"),BorderThickness=new Thickness(1)});
+   preview.Children.Add(new System.Windows.Shapes.Path{Fill=B("#183182F6"),Stroke=B("#3182F6"),StrokeThickness=2,IsHitTestVisible=false});
+   var selection=new TextBlock{Text="조절할 항목에 마우스를 올려 보세요",Margin=new Thickness(24,8,24,6),Foreground=B("#3182F6")};
+   var shell=new DockPanel();DockPanel.SetDock(preview,Dock.Top);shell.Children.Add(preview);DockPanel.SetDock(selection,Dock.Top);shell.Children.Add(selection);shell.Children.Add(new ScrollViewer{Content=panel,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});editor.Content=shell;
+   string activeTarget=null;
+   Action redraw=()=>{
+    var group=new GeometryGroup();
+    if(activeTarget!=null&&surface.ActualWidth>0&&surface.ActualHeight>0){
+     foreach(string name in activeTarget.Split(',')){
+      var element=Get<FrameworkElement>(name);
+      if(element==null||!element.IsVisible||element.ActualWidth<=0||element.ActualHeight<=0)continue;
+      var bounds=new Rect(new Point(),element.RenderSize);
+      if(element!=surface)bounds=element.TransformToAncestor(surface).TransformBounds(bounds);
+      double sx=preview.ActualWidth/surface.ActualWidth,sy=preview.ActualHeight/surface.ActualHeight;
+      group.Children.Add(new RectangleGeometry(new Rect(bounds.X*sx,bounds.Y*sy,bounds.Width*sx,bounds.Height*sy)));
+     }
+    }
+    string boundsKey=string.Join(";",System.Linq.Enumerable.Select(group.Children,g=>g.Bounds.ToString(CultureInfo.InvariantCulture)));
+    if(boundsKey==renderedBounds)return;
+    renderedBounds=boundsKey;
+    ((System.Windows.Shapes.Path)preview.Children[1]).Data=group;
+   };
+   preview.SizeChanged+=(s,e)=>redraw();
+   Action<string,string> pointAt=(target,caption)=>{activeTarget=target;selection.Text=caption;redraw();preview.Dispatcher.BeginInvoke(DispatcherPriority.Loaded,new Action(redraw));};
    panel.Children.Add(new TextBlock{Text="내 책상에 맞게",FontSize=24,FontWeight=FontWeights.Bold,Margin=new Thickness(0,0,0,8)});
    panel.Children.Add(new TextBlock{Text="구분선을 좌우로 끌어 영역 너비를 조절하세요. 아래 값은 위젯에 바로 반영되고 자동 저장됩니다. 전체 크기는 위젯 오른쪽 아래 모서리로 조절합니다.",TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,0,0,18)});
-   AddSetting(panel,"위젯 전체 너비",Window.MinWidth,Math.Max(Window.MinWidth,SystemParameters.WorkArea.Width-16),Window.Width,v=>{store.Data.WidgetAutoFit=false;Window.Width=v;store.Data.WidgetWidth=v;});
-   AddSetting(panel,"위젯 전체 높이",Window.MinHeight,Math.Max(Window.MinHeight,SystemParameters.WorkArea.Height-16),Window.Height,v=>{store.Data.WidgetAutoFit=false;Window.Height=v;store.Data.WidgetHeight=v;});
-   AddSetting(panel,"배경 불투명도 (%)",15,100,store.Data.WidgetOpacity*100,v=>store.Data.WidgetOpacity=v/100);
-   AddSetting(panel,"달력 너비 비율 (%)",35,85,Layout.CalendarShare*100,v=>Layout.CalendarShare=v/100);
-   AddSetting(panel,"달력 세로 크기",360,1400,Layout.CalendarHeight,v=>Layout.CalendarHeight=v);
-   AddSetting(panel,"월 제목 글자",14,40,Layout.MonthText,v=>Layout.MonthText=v);
-   AddSetting(panel,"요일 글자",8,22,Layout.WeekText,v=>Layout.WeekText=v);
-   AddSetting(panel,"날짜 숫자 크기 (%)",70,200,Layout.CalendarText*100,v=>Layout.CalendarText=v/100);
-   AddSetting(panel,"달력 일정 글자 (%)",70,200,Layout.EventText*100,v=>Layout.EventText=v/100);
-   AddSetting(panel,"날짜당 표시할 일정 수",1,10,Layout.EventsPerDay,v=>Layout.EventsPerDay=(int)v);
-   AddSetting(panel,"일정당 표시할 줄 수",1,6,Layout.EventLines,v=>Layout.EventLines=(int)v);
-   AddSetting(panel,"선택한 날 · 할 일 제목 글자",10,28,Layout.HeadingText,v=>Layout.HeadingText=v);
-   AddSetting(panel,"선택한 날 일정 글자 (%)",70,200,Layout.AgendaText*100,v=>Layout.AgendaText=v/100);
-   AddSetting(panel,"할 일 · 마감일 글자 (%)",70,200,Layout.TaskText*100,v=>Layout.TaskText=v/100);
-   AddSetting(panel,"체크박스와 할 일 크기 (%)",75,175,Layout.CheckSize*100,v=>Layout.CheckSize=v/100);
-   AddSetting(panel,"상단 버튼 글자",8,18,Layout.ToolbarText,v=>Layout.ToolbarText=v);
-   AddSetting(panel,"하단 상태 글자",8,18,Layout.FooterText,v=>Layout.FooterText=v);
-   AddSetting(panel,"바깥 여백",4,40,Layout.Padding,v=>Layout.Padding=v);
-   AddSetting(panel,"항목 · 버튼 간격 (%)",50,250,Layout.Spacing*100,v=>Layout.Spacing=v/100);
-   AddSetting(panel,"월 제목 영역 높이",40,100,Layout.MonthHeight,v=>Layout.MonthHeight=v);
-   AddSetting(panel,"요일 영역 높이",18,55,Layout.WeekHeight,v=>Layout.WeekHeight=v);
-   AddSetting(panel,"일정과 할 일 사이 간격",0,120,Layout.TaskGap,v=>Layout.TaskGap=v);
+   AddSetting(panel,pointAt,"WidgetSurface","위젯 전체 너비",Window.MinWidth,Math.Max(Window.MinWidth,SystemParameters.WorkArea.Width-16),Window.Width,v=>{store.Data.WidgetAutoFit=false;Window.Width=v;store.Data.WidgetWidth=v;});
+   AddSetting(panel,pointAt,"WidgetSurface","위젯 전체 높이",Window.MinHeight,Math.Max(Window.MinHeight,SystemParameters.WorkArea.Height-16),Window.Height,v=>{store.Data.WidgetAutoFit=false;Window.Height=v;store.Data.WidgetHeight=v;});
+   AddSetting(panel,pointAt,"WidgetSurface","배경 불투명도 (%)",15,100,store.Data.WidgetOpacity*100,v=>store.Data.WidgetOpacity=v/100);
+   AddSetting(panel,pointAt,"WidgetCalendar,WidgetSidebar","달력 너비 비율 (%)",35,85,Layout.CalendarShare*100,v=>Layout.CalendarShare=v/100);
+   AddSetting(panel,pointAt,"WidgetCalendar","달력 세로 크기",360,1400,Layout.CalendarHeight,v=>Layout.CalendarHeight=v);
+   AddSetting(panel,pointAt,"WidgetMonth","월 제목 글자",14,40,Layout.MonthText,v=>Layout.MonthText=v);
+   AddSetting(panel,pointAt,"WidgetWeekdays","요일 글자",8,22,Layout.WeekText,v=>Layout.WeekText=v);
+   AddSetting(panel,pointAt,"WidgetDays","날짜 숫자 크기 (%)",70,200,Layout.CalendarText*100,v=>Layout.CalendarText=v/100);
+   AddSetting(panel,pointAt,"WidgetDays","달력 일정 글자 (%)",70,200,Layout.EventText*100,v=>Layout.EventText=v/100);
+   AddSetting(panel,pointAt,"WidgetDays","날짜당 표시할 일정 수",1,10,Layout.EventsPerDay,v=>Layout.EventsPerDay=(int)v);
+   AddSetting(panel,pointAt,"WidgetDays","일정당 표시할 줄 수",1,6,Layout.EventLines,v=>Layout.EventLines=(int)v);
+   AddSetting(panel,pointAt,"WidgetDay,WidgetTaskHeading","선택한 날 · 할 일 제목 글자",10,28,Layout.HeadingText,v=>Layout.HeadingText=v);
+   AddSetting(panel,pointAt,"WidgetAgenda","선택한 날 일정 글자 (%)",70,200,Layout.AgendaText*100,v=>Layout.AgendaText=v/100);
+   AddSetting(panel,pointAt,"WidgetTasks","할 일 · 마감일 글자 (%)",70,200,Layout.TaskText*100,v=>Layout.TaskText=v/100);
+   AddSetting(panel,pointAt,"WidgetTasks","체크박스와 할 일 크기 (%)",75,175,Layout.CheckSize*100,v=>Layout.CheckSize=v/100);
+   AddSetting(panel,pointAt,"WidgetDrag","상단 버튼 글자",8,18,Layout.ToolbarText,v=>Layout.ToolbarText=v);
+   AddSetting(panel,pointAt,"WidgetSync","하단 상태 글자",8,18,Layout.FooterText,v=>Layout.FooterText=v);
+   AddSetting(panel,pointAt,"WidgetSurface","바깥 여백",4,40,Layout.Padding,v=>Layout.Padding=v);
+   AddSetting(panel,pointAt,"WidgetSurface","항목 · 버튼 간격 (%)",50,250,Layout.Spacing*100,v=>Layout.Spacing=v/100);
+   AddSetting(panel,pointAt,"WidgetMonth","월 제목 영역 높이",40,100,Layout.MonthHeight,v=>Layout.MonthHeight=v);
+   AddSetting(panel,pointAt,"WidgetWeekdays","요일 영역 높이",18,55,Layout.WeekHeight,v=>Layout.WeekHeight=v);
+   AddSetting(panel,pointAt,"WidgetTaskSection","일정과 할 일 사이 간격",0,120,Layout.TaskGap,v=>Layout.TaskGap=v);
    var reset=new Button{Content="기본 크기로 되돌리기",Margin=new Thickness(0,12,0,8)};reset.Click+=(s,e)=>{store.Data.WidgetLayout=new WidgetLayout();Render(lastMonth,lastSelected);save();editor.Close();Customize();};panel.Children.Add(reset);
    var done=new Button{Content="완료"};done.Click+=(s,e)=>editor.Close();panel.Children.Add(done);editor.Closed+=(s,e)=>save();editor.ShowDialog();
   }
-  void AddSetting(StackPanel panel,string caption,double min,double max,double value,Action<double> change){
+  void AddSetting(StackPanel panel,Action<string,string> pointAt,string target,string caption,double min,double max,double value,Action<double> change){
    var row=new Grid{Margin=new Thickness(0,0,0,4)};row.ColumnDefinitions.Add(new ColumnDefinition());row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(64)});row.Children.Add(new TextBlock{Text=caption,VerticalAlignment=VerticalAlignment.Center});var number=new TextBox{Text=Math.Round(value).ToString(CultureInfo.InvariantCulture),Padding=new Thickness(4),HorizontalContentAlignment=HorizontalAlignment.Right};Grid.SetColumn(number,1);row.Children.Add(number);panel.Children.Add(row);
    var slider=new Slider{Minimum=min,Maximum=max,Value=value,TickFrequency=1,IsSnapToTickEnabled=true,Margin=new Thickness(0,4,0,18)};panel.Children.Add(slider);
-   slider.ValueChanged+=(s,e)=>{number.Text=Math.Round(slider.Value).ToString(CultureInfo.InvariantCulture);change(slider.Value);Render(lastMonth,lastSelected);layoutSave.Stop();layoutSave.Start();};
+   row.MouseEnter+=(s,e)=>pointAt(target,caption);slider.MouseEnter+=(s,e)=>pointAt(target,caption);number.GotKeyboardFocus+=(s,e)=>pointAt(target,caption);slider.GotKeyboardFocus+=(s,e)=>pointAt(target,caption);
+   slider.ValueChanged+=(s,e)=>{number.Text=Math.Round(slider.Value).ToString(CultureInfo.InvariantCulture);change(slider.Value);Render(lastMonth,lastSelected);pointAt(target,caption);layoutSave.Stop();layoutSave.Start();};
    Action commit=()=>{double parsed;if(double.TryParse(number.Text,NumberStyles.Float,CultureInfo.InvariantCulture,out parsed)&&!double.IsNaN(parsed)&&!double.IsInfinity(parsed))slider.Value=Math.Max(min,Math.Min(max,parsed));number.Text=Math.Round(slider.Value).ToString(CultureInfo.InvariantCulture);};number.LostKeyboardFocus+=(s,e)=>commit();number.KeyDown+=(s,e)=>{if(e.Key==System.Windows.Input.Key.Enter){commit();e.Handled=true;}};
   }
  }

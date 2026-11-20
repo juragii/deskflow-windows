@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "juragii/deskflow-windows",
-  "version": "2.3.13.0",
-  "blob_sha": "64cd9e24d48367b106aa789591c91d7e62ce04e6",
-  "sha256": "c63aec2ae84f03600a160769bbe57eb606ea6654c1afaff0c76c6755fec39c48",
-  "notes": "로그인·절전 복귀 후 위젯 자동 복구. 달력/할 일 구분선 드래그와 22개 크기·글자·여백 설정, 자동 저장."
+  "version": "2.3.14.0",
+  "blob_sha": "eb364b89fe475363d610ed21fda7d8ec78c89ab6",
+  "sha256": "89970bd988c5c8b4813c7c44edc9df619baa757520575cb90b2ebbda45dc9bd0",
+  "notes": "Live widget preview highlights the area controlled by each setting."
 }
