@@ -17,6 +17,7 @@ namespace DeskFlow {
  public class Todo { public string Id=Guid.NewGuid().ToString(); public string Title=""; public string Due="",DueTime="",PcReminderKey="",PhoneReminderKey=""; public int ReminderMinutes; public bool Reminder=true; public bool Done; }
  public class CalEvent { public string Title,Start,End,Link,Calendar,Color; public bool AllDay; public string Id="",CalendarId="",Description="",Location="",ETag="",RecurringId="",EventType="default"; public bool Writable,Local,HasAttendees; }
  public class State {
+  public WidgetLayout WidgetLayout=new WidgetLayout();
   public string QuoteCycleStart="";
   public List<Todo> Tasks=new List<Todo>(); public List<CalEvent> Events=new List<CalEvent>(); public List<CalEvent> LocalEvents=new List<CalEvent>(); public List<CalendarInfo> Calendars=new List<CalendarInfo>();
   public double Left=100,Top=80,Width=1100,Height=800,Opacity=1; public bool Pinned,ShowDone;

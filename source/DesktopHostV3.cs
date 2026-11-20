@@ -14,6 +14,9 @@ namespace DeskFlow {
   public IntPtr Host {get{return hwnd;}}IntPtr hwnd;long originalEx;bool initialized,displayEnabled,placing;
   HwndSource source;Dispatcher dispatcher;WinEventProc callback;GCHandle callbackRoot;IntPtr foregroundHook,minimizeHook,objectHook;int recoveryQueued;
   public bool DesktopPresentationActive {get;private set;}public bool PeekExclusionApplied {get;private set;}
+  public event Action RecoveryRequested;
+  [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern uint RegisterWindowMessage(string name);
+  readonly uint taskbarCreated=RegisterWindowMessage("TaskbarCreated");
   [StructLayout(LayoutKind.Sequential)]struct WindowPos {public IntPtr Hwnd,After;public int X,Y,Width,Height;public uint Flags;}
   delegate void WinEventProc(IntPtr hook,uint kind,IntPtr window,int objectId,int child,uint thread,uint time);
   [DllImport("user32.dll")]static extern IntPtr SetWinEventHook(uint first,uint last,IntPtr module,WinEventProc proc,uint process,uint thread,uint flags);
@@ -37,6 +40,8 @@ namespace DeskFlow {
   [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern int GetClassName(IntPtr h,StringBuilder b,int n);
   [DllImport("user32.dll")]static extern bool SetWindowPos(IntPtr h,IntPtr after,int x,int y,int w,int height,uint flags);
   [DllImport("user32.dll")]static extern bool ShowWindow(IntPtr h,int command);
+  [DllImport("user32.dll")]static extern bool RedrawWindow(IntPtr h,IntPtr rect,IntPtr region,uint flags);
+  public void Repaint(){if(IsWindow(hwnd)){SetWindowPos(hwnd,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0004|0x0010|0x0020);RedrawWindow(hwnd,IntPtr.Zero,IntPtr.Zero,0x0001|0x0004|0x0080|0x0100);}}
   [DllImport("user32.dll",EntryPoint="GetWindowLongPtrW")]static extern IntPtr Get64(IntPtr h,int n);
   [DllImport("user32.dll",EntryPoint="GetWindowLongW")]static extern int Get32(IntPtr h,int n);
   [DllImport("user32.dll",EntryPoint="SetWindowLongPtrW")]static extern IntPtr Set64(IntPtr h,int n,IntPtr v);
@@ -61,13 +66,14 @@ namespace DeskFlow {
   }
   public void SetDisplayEnabled(bool value){displayEnabled=value;}
   void InstallProtection(Window window){
-   dispatcher=window.Dispatcher;if(source==null){source=HwndSource.FromHwnd(hwnd);if(source!=null)source.AddHook(WindowMessage);}
+   dispatcher=window.Dispatcher;if(source==null){source=HwndSource.FromHwnd(hwnd);if(source!=null){source.CompositionTarget.RenderMode=System.Windows.Interop.RenderMode.SoftwareOnly;source.AddHook(WindowMessage);}}
    if(callback==null){callback=ExternalEvent;callbackRoot=GCHandle.Alloc(callback);foregroundHook=SetWinEventHook(3,3,IntPtr.Zero,callback,0,0,0);minimizeHook=SetWinEventHook(0x16,0x17,IntPtr.Zero,callback,0,0,0);objectHook=SetWinEventHook(0x8002,0x800B,IntPtr.Zero,callback,0,0,0);}
    try{int enabled=1;PeekExclusionApplied=DwmSetWindowAttribute(hwnd,12,ref enabled,4)==0;}catch{PeekExclusionApplied=false;}
   }
   void QueueRecovery(){if(!displayEnabled||!Attached||dispatcher==null||dispatcher.HasShutdownStarted||Interlocked.Exchange(ref recoveryQueued,1)!=0)return;try{dispatcher.BeginInvoke(DispatcherPriority.Send,new Action(()=>{Interlocked.Exchange(ref recoveryQueued,0);if(displayEnabled&&Attached)Maintain();}));}catch{Interlocked.Exchange(ref recoveryQueued,0);}}
   void ExternalEvent(IntPtr hook,uint kind,IntPtr window,int objectId,int child,uint thread,uint time){if(!displayEnabled||!Attached||window==IntPtr.Zero||objectId!=0)return;if(kind==3||(window==hwnd&&(kind==0x16||kind==0x17||kind==0x8002||kind==0x8003))||(window!=hwnd&&Desktop(window)&&(kind==0x8002||kind==0x8003||kind==0x800B)))QueueRecovery();}
   IntPtr WindowMessage(IntPtr window,int message,IntPtr w,IntPtr l,ref bool handled){
+   if(displayEnabled&&(message==(int)taskbarCreated||message==0x7E||message==0x31E||(message==0x218&&(w.ToInt64()==7||w.ToInt64()==18)))){var recovery=RecoveryRequested;if(recovery!=null&&dispatcher!=null)dispatcher.BeginInvoke(DispatcherPriority.Background,recovery);}
    if(!displayEnabled||!Attached)return IntPtr.Zero;
    if(message==0x112&&(w.ToInt64()&0xFFF0)==0xF020){handled=true;return IntPtr.Zero;}
    if(message==0x46&&l!=IntPtr.Zero&&!placing){var pos=(WindowPos)Marshal.PtrToStructure(l,typeof(WindowPos));if((pos.Flags&0x80)!=0){pos.Flags=(pos.Flags&~0x80u)|0x40u;Marshal.StructureToPtr(pos,l,false);QueueRecovery();}}
