@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "juragii/deskflow-windows",
-  "version": "2.3.14.0",
-  "blob_sha": "eb364b89fe475363d610ed21fda7d8ec78c89ab6",
-  "sha256": "89970bd988c5c8b4813c7c44edc9df619baa757520575cb90b2ebbda45dc9bd0",
-  "notes": "나날 2.3.14 재배포 · 위젯 꾸미기 미리보기에서 조절 영역을 강조합니다."
+  "version": "2.3.15.0",
+  "blob_sha": "cdfd20d06353e57005d579dc06437efb900ea6db",
+  "sha256": "c205dad155a47e85cf2ac73ef513c686c86b9a14d0914fdcfc6dd4ca2a5d49c7",
+  "notes": "바탕화면 위젯의 일정 제목을 클릭하면 일정 보기 및 수정 창이 열립니다."
 }

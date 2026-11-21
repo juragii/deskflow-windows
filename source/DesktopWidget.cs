@@ -19,8 +19,8 @@ namespace DeskFlow {
   T Get<T>(string n) where T:class{return Window.FindName(n) as T;}
   static Brush B(string s){return (Brush)new BrushConverter().ConvertFromString(s);}
   string Ink {get{return store.Data.WidgetDark?"#F2F4F6":"#333D4B";}}
-  public DesktopWidget(Window main,Store state,Action open,Action onHidden,Action<int> month,Action<DateTime> select,Action today,Action onSave,Action sync,bool test=false){
-   store=state;save=onSave;hidden=onHidden;suppressNative=test;Host.RecoveryRequested+=()=>RecoverPresentation(true);
+  public DesktopWidget(Window main,Store state,Action open,Action onHidden,Action<int> month,Action<DateTime> select,Action today,Action onSave,Action sync,bool test=false,Action<CalEvent> editEvent=null){
+   store=state;edit=editEvent;save=onSave;hidden=onHidden;suppressNative=test;Host.RecoveryRequested+=()=>RecoverPresentation(true);
    using(var s=Assembly.GetExecutingAssembly().GetManifestResourceStream("DesktopWidget.xaml"))Window=(Window)XamlReader.Load(s);
    Window.Resources=main.Resources;Window.Icon=main.Icon;
    Window.Width=Math.Min(Math.Max(Window.MinWidth,store.Data.WidgetWidth),Math.Max(320,SystemParameters.WorkArea.Width-32));Window.Height=Math.Min(Math.Max(Window.MinHeight,store.Data.WidgetHeight),Math.Max(400,SystemParameters.WorkArea.Height-32));
@@ -46,6 +46,17 @@ namespace DeskFlow {
   void ApplyFit(){if(!store.Data.WidgetAutoFit)return;Window.Width=Math.Max(Window.MinWidth,Math.Min(900,SystemParameters.WorkArea.Width-48));Window.Height=Math.Max(Window.MinHeight,Math.Min(Get<Grid>("WidgetContent").Height+80,SystemParameters.WorkArea.Height-48));ClampOnScreen();}
   void ResponsiveLayout(){var view=Get<Viewbox>("WidgetFitView");var content=Get<Grid>("WidgetContent");content.Width=Math.Max(860,view.ActualWidth);if(!store.Data.WidgetAutoFit)content.Height=Math.Max(Layout.CalendarHeight,Math.Max(view.ActualHeight,Get<StackPanel>("WidgetAgenda").DesiredSize.Height+(store.Data.WidgetShowTasks?Get<StackPanel>("WidgetTaskSection").DesiredSize.Height:0)+60));}
   Action<DateTime> Select;
+  readonly Action<CalEvent> edit;
+  void MakeEventClickable(FrameworkElement element,CalEvent item){
+   if(edit==null)return;
+   element.Cursor=Cursors.Hand;
+   element.ToolTip=item.Title+" · 클릭하여 일정 보기 / 수정";
+   element.PreviewMouseLeftButtonDown+=(s,e)=>{e.Handled=true;};
+   element.PreviewMouseLeftButtonUp+=(s,e)=>{
+    e.Handled=true;
+    edit(item);
+   };
+  }
   bool FindButton(DependencyObject d){while(d!=null){if(d is Button)return true;if(d is FrameworkContentElement)d=((FrameworkContentElement)d).Parent;else d=VisualTreeHelper.GetParent(d);}return false;}
   public void Attach(){if(suppressNative)return;Host.Attach(Window,store.Data.WidgetAlwaysOnTop);Appearance();}
   public void ResetPosition(){Window.Show();{Host.Attach(Window,store.Data.WidgetAlwaysOnTop);var source=PresentationSource.FromVisual(Window);double scale=source==null?1:source.CompositionTarget.TransformToDevice.M11;int x=(int)((SystemParameters.WorkArea.Right-Window.Width-24)*scale),y=(int)((SystemParameters.WorkArea.Top+32)*scale);Host.MoveScreen(x,y);SavePosition();Host.Maintain(true);}}
@@ -67,13 +78,13 @@ namespace DeskFlow {
    for(int i=0;i<42;i++){
     DateTime d=start.AddDays(i);bool active=d.Date==selected.Date;var entries=store.CalendarEvents.Where(x=>GoogleCalendar.OnDay(x,d)).OrderBy(x=>!x.AllDay).ThenBy(GoogleCalendar.Start).ToList();
     var panel=new StackPanel{Margin=new Thickness(3,4,3,3)};var label=Txt(d.Day.ToString(),11,active?"#FFFFFF":d.Month!=month.Month?(store.Data.WidgetDark?"#6B7684":"#B0B8C1"):d.DayOfWeek==DayOfWeek.Sunday?"#F04452":d.DayOfWeek==DayOfWeek.Saturday?"#3182F6":Ink);label.HorizontalAlignment=HorizontalAlignment.Center;panel.Children.Add(label);
-    foreach(var item in entries.Take(Layout.EventsPerDay)){var title=Txt(item.Title,10,active?"#FFFFFF":store.Data.WidgetDark?"#B6D5FF":"#1B64DA");title.FontSize=10*Layout.EventText;title.MaxHeight=Layout.EventLines*title.FontSize*1.5;title.TextTrimming=TextTrimming.CharacterEllipsis;panel.Children.Add(new Border{Background=B(active?"#20FFFFFF":store.Data.WidgetDark?"#303182F6":"#183182F6"),CornerRadius=new CornerRadius(3),Margin=new Thickness(0,3*Layout.Spacing,0,0),Padding=new Thickness(2,Layout.Spacing,2,Layout.Spacing),Child=title});}
+    foreach(var item in entries.Take(Layout.EventsPerDay)){var title=Txt(item.Title,10,active?"#FFFFFF":store.Data.WidgetDark?"#B6D5FF":"#1B64DA");title.FontSize=10*Layout.EventText;title.MaxHeight=Layout.EventLines*title.FontSize*1.5;title.TextTrimming=TextTrimming.CharacterEllipsis;var eventCard=new Border{Background=B(active?"#20FFFFFF":store.Data.WidgetDark?"#303182F6":"#183182F6"),CornerRadius=new CornerRadius(3),Margin=new Thickness(0,3*Layout.Spacing,0,0),Padding=new Thickness(2,Layout.Spacing,2,Layout.Spacing),Child=title};MakeEventClickable(eventCard,item);panel.Children.Add(eventCard);}
     if(entries.Count>Layout.EventsPerDay)panel.Children.Add(Txt("+"+(entries.Count-Layout.EventsPerDay)+"개",9,active?"#FFFFFF":"#8B95A1"));
     string tooltip=d.ToString("M월 d일")+(entries.Count==0?" · 일정 없음":"\n"+string.Join("\n",entries.Select(x=>(x.AllDay?"종일":GoogleCalendar.Start(x).ToString("HH:mm"))+" · "+x.Title)));
     var button=new Button{ClipToBounds=true,Padding=new Thickness(0),Margin=new Thickness(2),HorizontalContentAlignment=HorizontalAlignment.Stretch,VerticalContentAlignment=VerticalAlignment.Top,Content=panel,Background=active?B("#3182F6"):d.Date==DateTime.Today?B("#203182F6"):Brushes.Transparent,ToolTip=tooltip};button.Click+=(s,e)=>Select(d);days.Children.Add(button);
    }
    textScale=Layout.AgendaText;var agenda=Get<StackPanel>("WidgetAgenda");agenda.Children.Clear();var events=store.CalendarEvents.Where(e=>GoogleCalendar.OnDay(e,selected)).OrderBy(e=>!e.AllDay).ThenBy(GoogleCalendar.Start).ToList();
-   foreach(var e in events){var row=new Grid{Margin=new Thickness(0,0,0,10)};row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(52)});row.ColumnDefinitions.Add(new ColumnDefinition());row.Children.Add(Txt(e.AllDay?"종일":GoogleCalendar.Start(e).ToString("HH:mm"),11,"#3182F6"));var title=Txt(e.Title,12);Grid.SetColumn(title,1);row.Children.Add(title);agenda.Children.Add(row);}if(events.Count==0)agenda.Children.Add(Txt("등록된 일정이 없습니다.",11,"#8B95A1"));
+   foreach(var e in events){var row=new Grid{Margin=new Thickness(0,0,0,10)};row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(52)});row.ColumnDefinitions.Add(new ColumnDefinition());row.Children.Add(Txt(e.AllDay?"종일":GoogleCalendar.Start(e).ToString("HH:mm"),11,"#3182F6"));var title=Txt(e.Title,12);Grid.SetColumn(title,1);row.Children.Add(title);row.Background=Brushes.Transparent;MakeEventClickable(row,e);agenda.Children.Add(row);}if(events.Count==0)agenda.Children.Add(Txt("등록된 일정이 없습니다.",11,"#8B95A1"));
    textScale=Layout.TaskText;var tasks=Get<StackPanel>("WidgetTasks");tasks.Children.Clear();var pending=store.Data.Tasks.Where(x=>!x.Done).OrderBy(x=>x.Due==""?"9999":x.Due).ThenBy(x=>x.DueTime).ToList();Get<TextBlock>("WidgetTaskHeading").Text="남은 할 일 · "+pending.Count;
    foreach(var t in pending){var content=new StackPanel();content.Children.Add(Txt(t.Title,12));if(t.Due!="")content.Children.Add(Txt("마감 "+t.Due.Substring(5).Replace("-","/")+(t.DueTime!=""?" "+t.DueTime:""),10,"#8B95A1"));var check=new CheckBox{Content=content,Margin=new Thickness(0,4,0,8),HorizontalContentAlignment=HorizontalAlignment.Stretch};check.Click+=(s,e)=>{t.Done=check.IsChecked==true;save();Select(selected);};tasks.Children.Add(check);}if(tasks.Children.Count==0)tasks.Children.Add(Txt("남은 할 일이 없습니다.",11,"#8B95A1"));
    ScaleItems();ResponsiveLayout();Get<Grid>("WidgetContent").Height=Layout.CalendarHeight;Window.UpdateLayout();double contentHeight=Get<StackPanel>("WidgetAgenda").DesiredSize.Height+(store.Data.WidgetShowTasks?Get<StackPanel>("WidgetTaskSection").DesiredSize.Height:0)+60;Get<Grid>("WidgetContent").Height=Math.Max(Layout.CalendarHeight,contentHeight);ApplyFit();
