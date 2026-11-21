@@ -4,5 +4,5 @@
   "version": "2.3.14.0",
   "blob_sha": "eb364b89fe475363d610ed21fda7d8ec78c89ab6",
   "sha256": "89970bd988c5c8b4813c7c44edc9df619baa757520575cb90b2ebbda45dc9bd0",
-  "notes": "Live widget preview highlights the area controlled by each setting."
+  "notes": "나날 2.3.14 재배포 · 위젯 꾸미기 미리보기에서 조절 영역을 강조합니다."
 }
