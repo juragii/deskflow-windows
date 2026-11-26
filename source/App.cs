@@ -55,7 +55,7 @@ namespace DeskFlow {
    Find<Grid>("DragBar").MouseLeftButtonDown+=(o,e)=>{if(e.OriginalSource is TextBlock||e.OriginalSource is Grid){try{Window.DragMove();}catch{}}};
    Click("Exit",()=>Window.Hide());Click("Hide",()=>Window.Hide());Click("Settings",Settings);Click("Connect",Settings);
    Click("Pin",()=>{Window.Topmost=!Window.Topmost;store.Data.Pinned=Window.Topmost;RenderPin();SafeSave();});
-   Click("Prev",()=>MoveMonth(-1));Click("Next",()=>MoveMonth(1));Click("Today",()=>{selected=DateTime.Today;month=selected;RenderCalendar();var ignored=Sync();});
+   Click("Prev",()=>MoveMonth(-1));Click("Next",()=>MoveMonth(1));Click("Today",()=>SelectDate(DateTime.Today));
    Click("Refresh",ManualSync);Click("AddEvent",()=>EditEvent(null));Click("AddTask",AddTask);Find<TextBox>("TaskInput").KeyDown+=(o,e)=>{if(e.Key==Key.Enter)AddTask();};
    Find<CheckBox>("ShowDone").IsChecked=store.Data.ShowDone;Find<CheckBox>("ShowDone").Click+=(o,e)=>{store.Data.ShowDone=Find<CheckBox>("ShowDone").IsChecked==true;SafeSave();RenderTasks();};
    tray=new Forms.NotifyIcon{Icon=System.Drawing.Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location),Text="나날 · 일정과 할 일",Visible=true};var menu=new Forms.ContextMenuStrip();menu.Items.Add("바탕화면 위젯 켜기 / 끄기",null,(o,e)=>{store.Data.DesktopEnabled=!store.Data.DesktopEnabled;UpdateDesktop();SafeSave();});menu.Items.Add("위젯 열기",null,(o,e)=>Reveal());menu.Items.Add("지금 동기화",null,(o,e)=>ManualSync());menu.Items.Add("Google 캘린더",null,(o,e)=>Open("https://calendar.google.com/"));menu.Items.Add("종료",null,(o,e)=>Window.Close());tray.ContextMenuStrip=menu;tray.DoubleClick+=(o,e)=>Reveal();tray.BalloonTipClicked+=(o,e)=>Reveal();
@@ -65,7 +65,7 @@ namespace DeskFlow {
   }
   void Reveal(){Window.Show();Window.WindowState=WindowState.Normal;Window.Activate();}
   void RenderPin(){Find<Button>("Pin").Background=Window.Topmost?Brush("#E8F3FF"):Brushes.Transparent;}
-  void MoveMonth(int delta){month=new DateTime(month.Year,month.Month,1).AddMonths(delta);selected=month;RenderCalendar();var ignored=Sync();}
+  void MoveMonth(int delta){month=new DateTime(month.Year,month.Month,1).AddMonths(delta);selected=month;TrackDateSelection();RenderCalendar();var ignored=Sync();}
   void RenderCalendar(){
    Find<TextBlock>("MonthLabel").Text=month.ToString("yyyy년 M월");var grid=Find<Grid>("MonthGrid");grid.Children.Clear();if(grid.ColumnDefinitions.Count==0){for(int col=0;col<7;col++)grid.ColumnDefinitions.Add(new ColumnDefinition());for(int row=0;row<6;row++)grid.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto,MinHeight=72});}DateTime first=new DateTime(month.Year,month.Month,1);DateTime start=first.AddDays(-(int)first.DayOfWeek);
    for(int i=0;i<42;i++){

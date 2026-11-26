@@ -1,8 +1,14 @@
-# 나날 2.3.15 · 바탕화면 위젯에서 일정 수정
+# 나날 2.3.16 · 오늘 날짜 자동 선택
+
+- 다른 날짜를 선택하거나 달을 이동하면 마지막 선택으로부터 1시간 뒤 오늘 날짜로 돌아옵니다.
+- Windows의 날짜가 바뀌면 새 날짜를 선택합니다. 절전 중 날짜가 바뀐 경우에는 복귀 후 바로 반영합니다.
+- 설치는 **설정 → 지금 업데이트 확인**에서 진행할 수 있습니다. [2.3.16 ZIP 다운로드](https://raw.githubusercontent.com/juragii/deskflow-windows/main/updates/DeskFlow-update.zip)
+
+## 나날 2.3.15 · 바탕화면 위젯에서 일정 수정
 
 - 위젯의 달력 칸 또는 오른쪽 일정 목록에서 **일정 제목**을 클릭하면 보기·수정 창이 열립니다. 날짜를 클릭하면 해당 날짜의 일정을 확인할 수 있습니다.
 - 편집 권한이 있는 Google 일정과 로컬 일정은 수정할 수 있습니다. 읽기 전용 일정은 내용을 확인할 수 있습니다.
-- 기존 사용자는 **설정 → 지금 업데이트 확인**에서 설치할 수 있습니다. 설치 ZIP은 GitHub의 `main` 브랜치 `updates` 폴더에 있습니다. [2.3.15 ZIP 다운로드](https://raw.githubusercontent.com/juragii/deskflow-windows/main/updates/DeskFlow-update.zip)
+- 기존 사용자는 **설정 → 지금 업데이트 확인**에서 설치할 수 있습니다. 설치 ZIP은 GitHub의 `main` 브랜치 `updates` 폴더에 있습니다. [최신 ZIP 다운로드](https://raw.githubusercontent.com/juragii/deskflow-windows/main/updates/DeskFlow-update.zip)
 
 ## 2.3.14 · 위젯 꾸미기 미리보기
 

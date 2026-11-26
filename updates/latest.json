@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "juragii/deskflow-windows",
-  "version": "2.3.15.0",
-  "blob_sha": "cdfd20d06353e57005d579dc06437efb900ea6db",
-  "sha256": "c205dad155a47e85cf2ac73ef513c686c86b9a14d0914fdcfc6dd4ca2a5d49c7",
-  "notes": "바탕화면 위젯의 일정 제목을 클릭하면 일정 보기 및 수정 창이 열립니다."
+  "version": "2.3.16.0",
+  "blob_sha": "6f98724a3801394876702e1222b7e7ea102c86a2",
+  "sha256": "0026042cbb4054f03364c5d5fe93adb41a8c229a9af9cec99e8db8d913495287",
+  "notes": "다른 날짜 선택 후 1시간이 지나거나 자정이 되면 오늘 날짜를 자동 선택합니다."
 }

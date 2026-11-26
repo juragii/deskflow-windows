@@ -2,7 +2,7 @@ using System;
 using System.Windows;
 namespace DeskFlow {
  partial class Widget {
-  void SelectDate(DateTime date){bool changed=date.Month!=month.Month||date.Year!=month.Year;selected=date;month=date;RenderCalendar();RenderTasks();if(changed){var ignored=Sync();}}
+  void SelectDate(DateTime date){bool changed=date.Month!=month.Month||date.Year!=month.Year;selected=date;month=date;TrackDateSelection();RenderCalendar();RenderTasks();if(changed){var ignored=Sync();}}
   void UpdateDesktop(){
    if(store.Data.DesktopEnabled){
     if(desktop==null){desktop=new DesktopWidget(Window,store,Reveal,UpdateDesktopStatus,MoveMonth,SelectDate,()=>SelectDate(DateTime.Today),SafeSave,ManualSync,suppressNative,item=>{Reveal();EditEvent(item);});desktop.Show();}

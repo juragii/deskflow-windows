@@ -20,15 +20,32 @@ namespace DeskFlow {
   NetworkAvailabilityChangedEventHandler networkHandler;PowerModeChangedEventHandler powerHandler;
   void InitCalendarSync(){
    timer=new DispatcherTimer{Interval=TimeSpan.FromSeconds(5)};
-   timer.Tick+=(s,e)=>{if(DateTime.Today!=lastCalendarDay){lastCalendarDay=DateTime.Today;RefreshDailyHeader(DateTime.Today);RenderCalendar();RenderTasks();}AutoSync(false);};timer.Start();
-   Window.Activated+=(s,e)=>{RefreshDailyHeader(DateTime.Today);AutoSync(false);};
+   timer.Tick+=(s,e)=>{RestoreTodayIfDue();AutoSync(false);};timer.Start();
+   Window.Activated+=(s,e)=>{RestoreTodayIfDue();RefreshDailyHeader(DateTime.Today);AutoSync(false);};
    Window.Loaded+=(s,e)=>AutoSync(false);
    if(suppressNative)return;
    networkHandler=(s,e)=>{if(e.IsAvailable)QueueRecovery();};powerHandler=(s,e)=>{if(e.Mode==PowerModes.Resume)QueueRecovery();};
    NetworkChange.NetworkAvailabilityChanged+=networkHandler;SystemEvents.PowerModeChanged+=powerHandler;
   }
   DateTime lastCalendarDay=DateTime.Today;
-  void QueueRecovery(){if(syncClosed||Window.Dispatcher.HasShutdownStarted)return;Window.Dispatcher.BeginInvoke(new Action(()=>AutoSync(true)));}
+  DateTime returnToTodayUtc=DateTime.MaxValue;
+
+  static bool IsTodayRestoreDue(DateTime today,DateTime lastDay,DateTime utcNow,DateTime deadline){
+   return today!=lastDay||utcNow>=deadline;
+  }
+
+  void TrackDateSelection(){
+   returnToTodayUtc=selected.Date==DateTime.Today?DateTime.MaxValue:DateTime.UtcNow.AddHours(1);
+  }
+
+  void RestoreTodayIfDue(){
+   DateTime today=DateTime.Today;
+   if(!IsTodayRestoreDue(today,lastCalendarDay,DateTime.UtcNow,returnToTodayUtc))return;
+   lastCalendarDay=today;
+   RefreshDailyHeader(today);
+   SelectDate(today);
+  }
+  void QueueRecovery(){if(syncClosed||Window.Dispatcher.HasShutdownStarted)return;Window.Dispatcher.BeginInvoke(new Action(()=>{RestoreTodayIfDue();AutoSync(true);}));}
   void AutoSync(bool recovery){if(syncClosed||suppressNative||!store.Data.AutoCalendarSync||syncing||connecting||!google.Connected)return;DateTime now=DateTime.UtcNow;if(recovery?(now-syncSchedule.LastAttempt).TotalSeconds>=15:syncSchedule.Due(now,Window.IsVisible&&Window.WindowState!=WindowState.Minimized)){var ignored=Sync();}}
   void StopCalendarSync(){syncClosed=true;if(timer!=null)timer.Stop();if(networkHandler!=null)NetworkChange.NetworkAvailabilityChanged-=networkHandler;if(powerHandler!=null)SystemEvents.PowerModeChanged-=powerHandler;}
   void ManualSync(){if(connecting){syncError="Google 로그인 완료 후 다시 동기화해 주세요.";RenderStatus();return;}if(!google.Connected){syncError="Google 캘린더를 먼저 연결해 주세요. 설정에서 로그인할 수 있습니다.";RenderStatus();return;}var ignored=Sync();}
